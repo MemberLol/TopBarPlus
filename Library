@@ -2,9 +2,6 @@
 
 local genv = (getgenv and getgenv()) or _G
 
--- Remove shadow ImageLabels left behind by previously loaded copies of TopbarPlus.
--- This intentionally runs BEFORE the cached-library early return below, because
--- cached captions can keep their old shadow objects even after Library7 is updated.
 local legacyShadowName = "Drop" .. "Shadow"
 local function removeLegacyCaptionShadows(root)
   if not root then
@@ -709,8 +706,6 @@ define("Utility", function(script, require)
 
     local function checkIfOutsideParentXBounds()
       task.defer(function()
-        -- This updater can run after an icon starts destroying. In that case,
-        -- the clipped frame or widget may already have been detached.
         if not arg15.Parent or not Widget.Parent then
           return
         end
@@ -722,9 +717,6 @@ define("Utility", function(script, require)
         if arg15:GetAttribute("ClipToJoinedParent") then
           for _ = 1, 10 do
             local icon = IconModule_m.getIconByUID(currentUID)
-
-            -- getIconByUID() returns nil as icons are removed during cleanup.
-            -- Check it BEFORE reading joinedFrame/parentIconUID.
             if not icon or icon.isDestroyed then
               break
             end
