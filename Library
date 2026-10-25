@@ -1,0 +1,4673 @@
+-- Made by Memberlol
+
+local genv = (getgenv and getgenv()) or _G
+
+-- Remove shadow ImageLabels left behind by previously loaded copies of TopbarPlus.
+-- This intentionally runs BEFORE the cached-library early return below, because
+-- cached captions can keep their old shadow objects even after Library7 is updated.
+local legacyShadowName = "Drop" .. "Shadow"
+local function removeLegacyCaptionShadows(root)
+  if not root then
+    return
+  end
+
+  local descendants
+  local ok = pcall(function()
+    descendants = root:GetDescendants()
+  end)
+  if not ok or not descendants then
+    return
+  end
+
+  for _, instance in ipairs(descendants) do
+    if instance:IsA("ImageLabel") and instance.Name == legacyShadowName then
+      local ancestor = instance.Parent
+      while ancestor and ancestor.Name ~= "Caption" do
+        ancestor = ancestor.Parent
+      end
+      if ancestor then
+        pcall(function()
+          instance:Destroy()
+        end)
+      end
+    end
+  end
+end
+
+pcall(function()
+  removeLegacyCaptionShadows(game:GetService("CoreGui"))
+end)
+pcall(function()
+  local player = game:GetService("Players").LocalPlayer
+  if player then
+    removeLegacyCaptionShadows(player:FindFirstChildOfClass("PlayerGui"))
+  end
+end)
+pcall(function()
+  if typeof(gethui) == "function" then
+    removeLegacyCaptionShadows(gethui())
+  end
+end)
+
+if genv.TopbarPlusLibrary then
+  return genv.TopbarPlusLibrary
+end
+
+local realRequire = require
+local loaders = {}
+local results = {}
+local loadedFlags = {}
+
+local root = Instance.new("Folder")
+root.Name = "topbarplus"
+
+local function node(path)
+  local current = root
+  for part in string.gmatch(path, "[^%.]+") do
+    local child = current:FindFirstChild(part)
+    if not child then
+      child = Instance.new("Folder")
+      child.Name = part
+      child.Parent = current
+    end
+    current = child
+  end
+  return current
+end
+
+local function customRequire(target)
+  local loader = loaders[target]
+  if not loader then
+    return realRequire(target)
+  end
+  if not loadedFlags[target] then
+    local value = loader(target, customRequire)
+    results[target] = value
+    loadedFlags[target] = true
+  end
+  return results[target]
+end
+
+local function define(path, fn)
+  loaders[node(path)] = fn
+end
+
+define("Types", function(script, require)
+  return {}
+end)
+
+define("Attribute", function(script, require)
+  return {}
+end)
+
+define("Reference", function(script, require)
+  local t = { objectName = "TopbarPlusReference" }
+  function t.addToReplicatedStorage()
+    return false
+  end
+  function t.getObject()
+    return false
+  end
+  return t
+end)
+
+define("VERSION", function(script, require)
+  local t = { appVersion = "v3.4.0", latestVersion = nil }
+  function t.getLatestVersion()
+    return t.latestVersion
+  end
+  function t.getAppVersion()
+    return t.appVersion
+  end
+  function t.isUpToDate()
+    return true
+  end
+  return t
+end)
+
+define("Packages.GoodSignal", function(script, require)
+  local v1 = nil
+
+  local function acquireRunnerThreadAndCallEventHandler(arg1, ...)
+    local v2 = v1
+    v1 = nil
+    arg1(...)
+    v1 = v2
+  end
+
+  local function runEventHandlerInFreeThread()
+    while true do
+      acquireRunnerThreadAndCallEventHandler(coroutine.yield())
+    end
+  end
+
+  local t = {}
+  t.__index = t
+
+  function t.new(arg2, arg3)
+    return (setmetatable({ _connected = true, _signal = arg2, _fn = arg3, _next = false }, t))
+  end
+
+  function t.Disconnect(arg4)
+    arg4._connected = false
+    if arg4._signal._handlerListHead == arg4 then
+      arg4._signal._handlerListHead = arg4._next
+      return
+    end
+    local v4 = arg4._signal._handlerListHead
+    while v4 do
+      if v4._next == arg4 then
+        break
+      end
+      v4 = v4._next
+    end
+    if v4 then
+      v4._next = arg4._next
+    end
+  end
+
+  t.Destroy = t.Disconnect
+  setmetatable(t, {
+    __index = function(_, arg6)
+      error(("Attempt to get Connection::%s (not a valid member)"):format((tostring(arg6))), 2)
+    end,
+    __newindex = function(_, arg8, _)
+      error(("Attempt to set Connection::%s (not a valid member)"):format((tostring(arg8))), 2)
+    end
+  })
+
+  local t_3 = {}
+  t_3.__index = t_3
+
+  function t_3.new()
+    return (setmetatable({ _handlerListHead = false }, t_3))
+  end
+
+  function t_3.Connect(arg10, arg11)
+    local v5 = t.new(arg10, arg11)
+    if arg10._handlerListHead then
+      v5._next = arg10._handlerListHead
+      arg10._handlerListHead = v5
+      return v5
+    end
+    arg10._handlerListHead = v5
+    return v5
+  end
+
+  function t_3.DisconnectAll(arg12)
+    arg12._handlerListHead = false
+  end
+
+  t_3.Destroy = t_3.DisconnectAll
+
+  function t_3.Fire(arg13, ...)
+    local v6 = arg13._handlerListHead
+    while v6 do
+      if v6._connected then
+        if not v1 then
+          v1 = coroutine.create(runEventHandlerInFreeThread)
+          coroutine.resume(v1)
+        end
+        task.spawn(v1, v6._fn, ...)
+      end
+      v6 = v6._next
+    end
+  end
+
+  function t_3.Wait(arg14)
+    local thread = coroutine.running()
+    local v7 = nil
+    v7 = arg14:Connect(function(...)
+      v7:Disconnect()
+      task.spawn(thread, ...)
+    end)
+    return coroutine.yield()
+  end
+
+  function t_3.Once(arg15, arg16)
+    local v8 = nil
+    v8 = arg15:Connect(function(...)
+      if v8._connected then
+        v8:Disconnect()
+      end
+      arg16(...)
+    end)
+    return v8
+  end
+
+  setmetatable(t_3, {
+    __index = function(_, arg18)
+      error(("Attempt to get Signal::%s (not a valid member)"):format((tostring(arg18))), 2)
+    end,
+    __newindex = function(_, arg20, _)
+      error(("Attempt to set Signal::%s (not a valid member)"):format((tostring(arg20))), 2)
+    end
+  })
+
+  return t_3
+end)
+
+define("Packages.Janitor", function(script, require)
+  local Heartbeat = game:GetService("RunService").Heartbeat
+  local proxy = newproxy(true)
+  getmetatable(proxy).__tostring = function()
+    return "IndicesReference"
+  end
+
+  local proxy_1 = newproxy(true)
+  getmetatable(proxy_1).__tostring = function()
+    return "LinkToInstanceIndex"
+  end
+
+  local t = {
+    IGNORE_MEMORY_DEBUG = true,
+    ClassName = "Janitor",
+    __index = { CurrentlyCleaning = true, [proxy] = nil }
+  }
+  local t_2 = { ["function"] = true, Promise = "cancel", RBXScriptConnection = "Disconnect" }
+
+  function t.new()
+    return (setmetatable({ CurrentlyCleaning = false, [proxy] = nil }, t))
+  end
+
+  function t.Is(arg1)
+    return if type(arg1) == "table" then if getmetatable(arg1) ~= t then false else true else false
+  end
+
+  t.is = t.Is
+
+  function t.__index.Add(arg2, arg3, arg4, arg5)
+    local v4
+    if arg5 then
+      arg2:Remove(arg5)
+      v4 = arg2[proxy]
+      if not v4 then
+        v4 = {}
+        arg2[proxy] = v4
+      end
+      v4[arg5] = arg3
+    end
+
+    v4 = typeof(arg3)
+    if v4 == "table" then
+      if string.match(tostring(arg3), "Promise") then
+        v4 = "Promise"
+      end
+    end
+
+    arg4 = arg4 or (t_2[v4] or "Destroy")
+
+    if type(arg3) ~= "function" and not arg3[arg4] then
+      warn(
+        string.format(
+          "Object %s doesn't have method %s, are you sure you want to add it? Traceback: %s",
+          tostring(arg3),
+          tostring(arg4),
+          debug.traceback(nil, 2)
+        )
+      )
+    end
+
+    arg2[arg3] = { arg4, (debug.traceback("")) }
+    return arg3
+  end
+
+  t.__index.Give = t.__index.Add
+
+  function t.__index.AddPromise(arg6, arg7)
+    return arg7
+  end
+
+  t.__index.GivePromise = t.__index.AddPromise
+
+  function t.__index.AddObject(arg11, arg12)
+    local proxy_3 = newproxy(false)
+    return arg11:Add(arg12, false, proxy_3), proxy_3
+  end
+
+  t.__index.GiveObject = t.__index.AddObject
+
+  function t.__index.Remove(arg13, arg14)
+    local v15 = arg13[proxy]
+    if v15 then
+      local v16 = v15[arg14]
+      if v16 then
+        local v17 = arg13[v16]
+        local v18 = v17
+        if v18 then
+          v18 = v17[1]
+        end
+        if v18 then
+          if v18 == true then
+            v16()
+          else
+            local v19 = v16[v18]
+            if v19 then
+              v19(v16)
+            end
+          end
+          arg13[v16] = nil
+        end
+        v15[arg14] = nil
+      end
+    end
+    return arg13
+  end
+
+  function t.__index.Get(arg15, arg16)
+    local v20 = arg15[proxy]
+    if v20 then
+      return v20[arg16]
+    end
+    return nil
+  end
+
+  function t.__index.Cleanup(arg17)
+    if not arg17.CurrentlyCleaning then
+      arg17.CurrentlyCleaning = nil
+
+      for key, val in next, arg17 do
+        if key ~= proxy then
+          local v21 = type(key)
+          if v21 == "string" or v21 == "number" then
+            arg17[key] = nil
+          else
+            local v22 = val[1]
+            local v23 = val[2]
+
+            if v22 == true then
+              local Success, Result = pcall(key)
+              if not Success then
+                local v26 = debug.traceback("", 3)
+                warn("-------- Janitor Error --------" .. "\n" .. tostring(Result) .. "\n" .. v26 .. "" .. v23)
+              end
+            else
+              local v27 = key[v22]
+              if v27 then
+                local Success_1, Result_1 = pcall(v27, key)
+                if not Success_1 and not (if typeof(key) == "Instance" then if v27 == "Destroy" then true else false else false) then
+                  local v29 = debug.traceback("", 3)
+                  warn("-------- Janitor Error --------" .. "\n" .. tostring(Result_1) .. "\n" .. v29 .. "" .. v23)
+                end
+              end
+            end
+
+            arg17[key] = nil
+          end
+        end
+      end
+
+      local v30 = arg17[proxy]
+      if v30 then
+        for key_1, _ in next, v30 do
+          v30[key_1] = nil
+        end
+        arg17[proxy] = {}
+      end
+
+      arg17.CurrentlyCleaning = false
+    end
+  end
+
+  t.__index.Clean = t.__index.Cleanup
+
+  function t.__index.Destroy(arg19)
+    arg19:Cleanup()
+  end
+
+  t.__call = t.__index.Cleanup
+
+  local t_4 = { Connected = true }
+  t_4.__index = t_4
+
+  function t_4.Disconnect(arg20)
+    if arg20.Connected then
+      arg20.Connected = false
+      arg20.Connection:Disconnect()
+    end
+  end
+
+  function t_4.__tostring(arg21)
+    return "Disconnect<" .. tostring(arg21.Connected) .. ">"
+  end
+
+  function t.__index.LinkToInstance(arg22, arg23, arg24)
+    local v31 = arg24 and newproxy(false) or proxy_1
+    local v32 = if arg23.Parent ~= nil then false else true
+    local t_5 = setmetatable({}, t_4)
+    local v33 = nil
+
+    local function ChangedFunction(_, arg26)
+      if t_5.Connected then
+        v32 = if arg26 ~= nil then false else true
+        if v32 then
+          coroutine.wrap(function()
+            Heartbeat:Wait()
+            if not t_5.Connected then
+              return
+            end
+            if not v33.Connected then
+              arg22:Cleanup()
+              return
+            end
+            while true do
+              if not v32 then
+                break
+              end
+              if not v33.Connected or not t_5.Connected then
+                break
+              end
+              Heartbeat:Wait()
+            end
+            if t_5.Connected and v32 then
+              arg22:Cleanup()
+            end
+          end)()
+        end
+      end
+    end
+
+    v33 = arg23.AncestryChanged:Connect(ChangedFunction)
+    t_5.Connection = v33
+
+    if v32 and t_5.Connected then
+      v32 = if arg23.Parent ~= nil then false else true
+      if v32 then
+        coroutine.wrap(function()
+          Heartbeat:Wait()
+          if not t_5.Connected then
+            return
+          end
+          if not v33.Connected then
+            arg22:Cleanup()
+            return
+          end
+          while true do
+            if not v32 then
+              break
+            end
+            if not v33.Connected or not t_5.Connected then
+              break
+            end
+            Heartbeat:Wait()
+          end
+          if t_5.Connected and v32 then
+            arg22:Cleanup()
+          end
+        end)()
+      end
+    end
+
+    return arg22:Add(t_5, "Disconnect", v31)
+  end
+
+  function t.__index.LinkToInstances(arg27, ...)
+    local v35 = t.new()
+    for _, val_2 in ipairs({ ... }) do
+      v35:Add(arg27:LinkToInstance(val_2, true), "Disconnect")
+    end
+    return v35
+  end
+
+  local aliases = {}
+  for key_3, val_3 in next, t.__index do
+    aliases[key_3] = val_3
+  end
+  for key_3, val_3 in next, aliases do
+    t.__index[string.sub(string.lower(key_3), 1, 1) .. string.sub(key_3, 2)] = val_3
+  end
+
+  return t
+end)
+
+define("Utility", function(script, require)
+  local t = {
+    createStagger = function(arg1, arg2, arg3)
+      arg1 = if not arg1 then 0.01 else if arg1 ~= 0 then arg1 else 0.01
+      local v1 = false
+      local v2 = false
+
+      local function staggeredCallback(...)
+        if v1 then
+          v2 = true
+          return
+        end
+
+        local t_1 = table.pack(...)
+        v1 = true
+        v2 = false
+        task.spawn(function()
+          if arg3 then
+            task.wait(arg1)
+          end
+          arg2(table.unpack(t_1))
+        end)
+        task.delay(arg1, function()
+          v1 = false
+          if v2 then
+            staggeredCallback(table.unpack(t_1))
+          end
+        end)
+      end
+
+      return staggeredCallback
+    end,
+    round = function(arg4)
+      return (math.floor(arg4 + 0.5))
+    end,
+    reverseTable = function(arg5)
+      for index = 1, math.floor(#arg5 / 2) do
+        local v5 = #arg5 - index + 1
+        arg5[index], arg5[v5] = arg5[v5], arg5[index]
+      end
+    end
+  }
+  local LocalPlayer = game:GetService("Players").LocalPlayer
+
+  function t.copyTable(arg6)
+    assert(if type(arg6) ~= "table" then false else true, "First argument must be a table")
+    local t_2 = table.create(#arg6)
+    for key, val in pairs(arg6) do
+      if type(val) == "table" then
+        t_2[key] = t.copyTable(val)
+      else
+        t_2[key] = val
+      end
+    end
+    return t_2
+  end
+
+  local t_3 = {
+    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+    "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+    "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+    "<", ">", "?", "@", "{", "}", "[", "]", "!", "(", ")", "=", "+", "~", "#"
+  }
+
+  function t.generateUID(arg7)
+    local v7 = ""
+    local v8 = t_3
+    local v9 = #v8
+    for _ = 1, arg7 or 8 do
+      v7 ..= v8[math.random(1, v9)]
+    end
+    return v7
+  end
+
+  local t_4 = {}
+
+  function t.setVisible(arg8, arg9, arg10)
+    local v10 = t_4[arg8]
+    if not v10 then
+      v10 = {}
+      t_4[arg8] = v10
+      arg8.Destroying:Once(function()
+        t_4[arg8] = nil
+      end)
+    end
+
+    if not arg9 then
+      v10[arg10] = true
+    else
+      v10[arg10] = nil
+    end
+
+    local v11 = arg9
+    if arg9 then
+      for _, _ in pairs(v10) do
+        v11 = false
+        break
+      end
+    end
+
+    arg8.Visible = v11
+  end
+
+  function t.formatStateName(arg11)
+    return string.upper((string.sub(arg11, 1, 1))) .. string.lower((string.sub(arg11, 2)))
+  end
+
+  function t.localPlayerRespawned(arg12)
+    LocalPlayer.CharacterRemoving:Connect(arg12)
+  end
+
+  function t.getClippedContainer(arg13)
+    local v13 = arg13:FindFirstChild("ClippedContainer")
+    if not v13 then
+      v13 = Instance.new("Folder")
+      v13.Name = "ClippedContainer"
+      v13.Parent = arg13
+    end
+    return v13
+  end
+
+  local Janitor_m = require(script.Parent.Packages.Janitor)
+  local GuiService = game:GetService("GuiService")
+
+  function t.clipOutside(arg14, arg15)
+    local v14 = arg14.janitor:add(Janitor_m.new())
+    arg15.Destroying:Once(function()
+      v14:Destroy()
+    end)
+    arg14.janitor:add(arg15)
+    local Parent = arg15.Parent
+    local v15 = v14:add(Instance.new("Frame"))
+    v15:SetAttribute("IsAClippedClone", true)
+    v15.Name = arg15.Name
+    v15.AnchorPoint = arg15.AnchorPoint
+    v15.Size = arg15.Size
+    v15.Position = arg15.Position
+    v15.BackgroundTransparency = 1
+    v15.LayoutOrder = arg15.LayoutOrder
+    v15.Parent = Parent
+    local OriginalInstance_ObjectValue = Instance.new("ObjectValue")
+    OriginalInstance_ObjectValue.Name = "OriginalInstance"
+    OriginalInstance_ObjectValue.Value = arg15
+    OriginalInstance_ObjectValue.Parent = v15
+    local v16 = OriginalInstance_ObjectValue:Clone()
+    arg15:SetAttribute("HasAClippedClone", true)
+    v16.Name = "ClippedClone"
+    v16.Value = v15
+    v16.Parent = arg15
+    local v17 = nil
+    local IconModule_m = require(arg14.iconModule)
+    local Container = IconModule_m.container
+
+    local function updateScreenGui()
+      local v18 = Parent:FindFirstAncestorWhichIsA("ScreenGui")
+      v17 = if string.match(v18.Name, "Clipped") then v18 else Container[v18.Name .. "Clipped"]
+      arg15.AnchorPoint = Vector2.new(0, 0)
+      arg15.Parent = t.getClippedContainer(v17)
+    end
+
+    v14:add(arg14.alignmentChanged:Connect(updateScreenGui))
+    updateScreenGui()
+
+    for _, child in pairs(arg15:GetChildren()) do
+      if child:IsA("UIAspectRatioConstraint") then
+        child:Clone().Parent = v15
+      end
+    end
+
+    local Widget = arg14.widget
+    local v24 = false
+    local IgnoreVisibilityUpdater = arg15:GetAttribute("IgnoreVisibilityUpdater")
+
+    local function updateVisibility()
+      if IgnoreVisibilityUpdater then
+        return
+      end
+      local v25 = Widget.Visible
+      v25 = if not v24 then v25 else false
+      t.setVisible(arg15, v25, "ClipHandler")
+    end
+
+    v14:add(Widget:GetPropertyChangedSignal("Visible"):Connect(updateVisibility))
+    local v26 = nil
+
+    local function checkIfOutsideParentXBounds()
+      task.defer(function()
+        -- This updater can run after an icon starts destroying. In that case,
+        -- the clipped frame or widget may already have been detached.
+        if not arg15.Parent or not Widget.Parent then
+          return
+        end
+
+        local joinedFrame = nil
+        local UID = arg14.UID
+        local currentUID = UID
+
+        if arg15:GetAttribute("ClipToJoinedParent") then
+          for _ = 1, 10 do
+            local icon = IconModule_m.getIconByUID(currentUID)
+
+            -- getIconByUID() returns nil as icons are removed during cleanup.
+            -- Check it BEFORE reading joinedFrame/parentIconUID.
+            if not icon or icon.isDestroyed then
+              break
+            end
+
+            local frame = icon.joinedFrame
+            currentUID = icon.parentIconUID
+            if not frame or not frame.Parent then
+              break
+            end
+
+            joinedFrame = frame
+            if joinedFrame.Name == "DropdownScroller" then
+              break
+            end
+
+            if not currentUID then
+              break
+            end
+          end
+        end
+
+        if not joinedFrame or not joinedFrame.Parent then
+          v24 = false
+          if IgnoreVisibilityUpdater then
+            return
+          end
+          t.setVisible(arg15, Widget.Visible, "ClipHandler")
+          return
+        end
+
+        local pos = joinedFrame.AbsolutePosition
+        local size = joinedFrame.AbsoluteSize
+        local center = arg15.AbsolutePosition + arg15.AbsoluteSize / 2
+        local outside = center.X < pos.X or center.X > pos.X + size.X or center.Y < pos.Y or center.Y > pos.Y + size.Y
+
+        if outside ~= v24 then
+          v24 = outside
+          if not IgnoreVisibilityUpdater then
+            local vis = Widget.Visible
+            vis = if not v24 then vis else false
+            t.setVisible(arg15, vis, "ClipHandler")
+          end
+        end
+
+        if joinedFrame:IsA("ScrollingFrame") and v26 ~= joinedFrame then
+          v26 = joinedFrame
+          v14:add(joinedFrame:GetPropertyChangedSignal("AbsoluteWindowSize"):Connect(function()
+            checkIfOutsideParentXBounds()
+          end), "Disconnect", "TrackUtilityScroller-" .. UID)
+        end
+      end)
+    end
+
+    local CurrentCamera = workspace.CurrentCamera
+    local v36 = arg15:GetAttribute("AdditionalOffsetX") or 0
+
+    local function trackProperty(arg16)
+      local v37 = "Absolute" .. arg16
+
+      local function updateProperty()
+        local v38 = v15[v37]
+        local v39 = UDim2.fromOffset(v38.X, v38.Y)
+
+        if arg16 == "Position" then
+          local v40 = CurrentCamera.ViewportSize.X - arg15.AbsoluteSize.X - 4
+          local v41 = v39.X.Offset
+          v41 = if not (v41 < 4) then if not (v40 < v41) then v41 else v40 else 4
+          local v42 = if not IconModule_m.isOldTopbar then workspace.CurrentCamera.ViewportSize.X - v17.AbsoluteSize.X - 0 else v17.AbsolutePosition.X
+          v39 = UDim2.fromOffset(v41, v39.Y.Offset) + UDim2.fromOffset(
+            -(v42 - v36),
+            GuiService.TopbarInset.Height
+          )
+          checkIfOutsideParentXBounds()
+        end
+
+        arg15[arg16] = v39
+      end
+
+      local v52 = t.createStagger(0.01, updateProperty)
+      v14:add(v15:GetPropertyChangedSignal(v37):Connect(v52))
+      v14:add(v15:GetAttributeChangedSignal("ForceUpdate"):Connect(function()
+        v52()
+      end))
+      local v55 = t.createStagger(0.5, updateProperty, true)
+      v14:add(v15:GetPropertyChangedSignal(v37):Connect(v55))
+
+      if arg16 == "Position" then
+        v14:add(v17:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+          v52()
+        end))
+      end
+    end
+
+    task.delay(0.1, checkIfOutsideParentXBounds)
+    checkIfOutsideParentXBounds()
+
+    updateVisibility()
+
+    trackProperty("Position")
+    v14:add(arg15:GetPropertyChangedSignal("Visible"):Connect(function() end))
+
+    if arg15:GetAttribute("TrackCloneSize") then
+      trackProperty("Size")
+    else
+      v14:add(arg15:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        local AbsoluteSize_5 = arg15.AbsoluteSize
+        v15.Size = UDim2.fromOffset(AbsoluteSize_5.X, AbsoluteSize_5.Y)
+      end))
+    end
+
+    return v15
+  end
+
+  function t.joinFeature(arg17, arg18, arg19, arg20)
+    local JoinJanitor = arg17.joinJanitor
+    JoinJanitor:clean()
+
+    if not arg20 then
+      arg17:leave()
+      return
+    end
+
+    arg17.parentIconUID = arg18.UID
+    arg17.joinedFrame = arg20
+    JoinJanitor:add(arg18.alignmentChanged:Connect(function()
+      local v69 = arg18.alignment
+      v69 = if v69 ~= "Center" then v69 else "Left"
+      arg17:setAlignment(v69, true)
+    end))
+    local v70 = arg18.alignment
+
+    if v70 == "Center" then
+      v70 = "Left"
+    end
+
+    arg17:setAlignment(v70, true)
+    arg17:modifyTheme({ "IconButton", "BackgroundTransparency", 1 }, "JoinModification")
+    arg17:modifyTheme({ "ClickRegion", "Active", false }, "JoinModification")
+
+    if arg18.childModifications then
+      task.defer(function()
+        arg17:modifyTheme(arg18.childModifications, arg18.childModificationsUID)
+      end)
+    end
+
+    local ClickRegion = arg17:getInstance("ClickRegion")
+
+    local function makeSelectable()
+      ClickRegion.Selectable = arg18.isSelected
+    end
+
+    JoinJanitor:add(arg18.toggled:Connect(makeSelectable))
+    task.defer(makeSelectable)
+    JoinJanitor:add(function()
+      ClickRegion.Selectable = true
+    end)
+    local UID_3 = arg17.UID
+    table.insert(arg19, UID_3)
+    arg18:autoDeselect(false)
+    arg18.childIconsDict[UID_3] = true
+
+    if not arg18.isEnabled then
+      arg18:setEnabled(true)
+    end
+
+    arg17.joinedParent:Fire(arg18)
+    JoinJanitor:add(function()
+      if not arg17.joinedFrame then
+        return
+      end
+
+      for key_3, val_2 in pairs(arg19) do
+        if val_2 == UID_3 then
+          table.remove(arg19, key_3)
+          break
+        end
+      end
+
+      local v71 = require(arg17.iconModule).getIconByUID(arg17.parentIconUID)
+
+      if not v71 then
+        return
+      end
+
+      arg17:setAlignment(arg17.originalAlignment)
+      arg17.parentIconUID = false
+      arg17.joinedFrame = false
+      arg17:removeModification("JoinModification")
+      local v72 = true
+      local ChildIconsDict = v71.childIconsDict
+      ChildIconsDict[UID_3] = nil
+
+      for _, _ in pairs(ChildIconsDict) do
+        v72 = false
+        break
+      end
+
+      if v72 and not v71.isAnOverflow then
+        v71:setEnabled(false)
+      end
+
+      local v73 = arg18.alignment
+      v73 = if v73 ~= "Center" then v73 else "Left"
+      arg17:setAlignment(v73, true)
+    end)
+  end
+
+  return t
+end)
+
+define("Features.Themes.Default", function(script, require)
+  return {
+    { "IconCorners", "CornerRadius", UDim.new(1, 0) },
+    { "Selection", "RotationSpeed", 1 },
+    { "Selection", "Size", UDim2.new(1, 0, 1, 1) },
+    { "Selection", "Position", UDim2.new(0, 0, 0, 0) },
+    {
+      "SelectionGradient",
+      "Color",
+      ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(86, 86, 86))
+      })
+    },
+    { "IconImage", "Image", "", "Deselected" },
+    { "IconLabel", "Text", "", "Deselected" },
+    { "IconLabel", "Position", UDim2.fromOffset(0, 0), "Deselected" },
+    { "Widget", "DesiredWidth", 44, "Deselected" },
+    { "Widget", "MinimumWidth", 44, "Deselected" },
+    { "Widget", "MinimumHeight", 44, "Deselected" },
+    { "Widget", "BorderSize", 4, "Deselected" },
+    { "IconButton", "BackgroundColor3", Color3.fromRGB(18, 18, 21), "Deselected" },
+    { "IconButton", "BackgroundTransparency", 0.08, "Deselected" },
+    { "IconImageScale", "Value", 0.5, "Deselected" },
+    { "IconImageCorner", "CornerRadius", UDim.new(0, 0), "Deselected" },
+    { "IconImage", "ImageColor3", Color3.fromRGB(255, 255, 255), "Deselected" },
+    { "IconImage", "ImageTransparency", 0, "Deselected" },
+    { "IconImageRatio", "AspectRatio", 1, "Deselected" },
+    {
+      "IconLabel",
+      "FontFace",
+      Font.new(
+        "rbxasset://fonts/families/BuilderSans.json",
+        Enum.FontWeight.Bold,
+        Enum.FontStyle.Normal
+      ),
+      "Deselected"
+    },
+    { "IconLabel", "TextSize", 16, "Deselected" },
+    { "IconSpot", "BackgroundTransparency", 1, "Deselected" },
+    { "IconOverlay", "BackgroundTransparency", 0.85, "Deselected" },
+    { "IconSpotGradient", "Enabled", false, "Deselected" },
+    { "IconGradient", "Enabled", false, "Deselected" },
+    { "ClickRegion", "Active", true, "Deselected" },
+    { "Menu", "Active", false, "Deselected" },
+    { "ContentsList", "HorizontalAlignment", Enum.HorizontalAlignment.Center, "Deselected" },
+    { "Dropdown", "BackgroundColor3", Color3.fromRGB(18, 18, 21), "Deselected" },
+    { "Dropdown", "BackgroundTransparency", 0.08, "Deselected" },
+    { "Dropdown", "MaxIcons", 4.5, "Deselected" },
+    { "Menu", "MaxIcons", 4, "Deselected" },
+    { "Notice", "Position", UDim2.new(1, -12, 0, -1), "Deselected" },
+    { "Notice", "Size", UDim2.new(0, 20, 0, 20), "Deselected" },
+    { "NoticeLabel", "TextSize", 13, "Deselected" },
+    { "PaddingLeft", "Size", UDim2.new(0, 9, 1, 0), "Deselected" },
+    { "PaddingRight", "Size", UDim2.new(0, 11, 1, 0), "Deselected" },
+    { "IconSpot", "BackgroundTransparency", 0.7, "Selected" },
+    { "IconSpot", "BackgroundColor3", Color3.fromRGB(255, 255, 255), "Selected" },
+    { "IconSpotGradient", "Enabled", true, "Selected" },
+    { "IconSpotGradient", "Rotation", 45, "Selected" },
+    {
+      "IconSpotGradient",
+      "Color",
+      ColorSequence.new(Color3.fromRGB(96, 98, 100), Color3.fromRGB(77, 78, 80)),
+      "Selected"
+    }
+  }
+end)
+
+define("Features.Themes.Classic", function(script, require)
+  return {
+    { "Selection", "Size", UDim2.new(1, -6, 1, -5) },
+    { "Selection", "Position", UDim2.new(0, 3, 0, 3) },
+    { "Widget", "MinimumWidth", 32, "Deselected" },
+    { "Widget", "MinimumHeight", 32, "Deselected" },
+    { "Widget", "BorderSize", 0, "Deselected" },
+    { "IconCorners", "CornerRadius", UDim.new(0, 9), "Deselected" },
+    { "IconButton", "BackgroundTransparency", 0.5, "Deselected" },
+    { "IconLabel", "TextSize", 14, "Deselected" },
+    { "Dropdown", "BackgroundTransparency", 0.5, "Deselected" },
+    { "Notice", "Position", UDim2.new(1, -12, 0, -3), "Deselected" },
+    { "Notice", "Size", UDim2.new(0, 15, 0, 15), "Deselected" },
+    { "NoticeLabel", "TextSize", 11, "Deselected" },
+    { "IconSpot", "BackgroundColor3", Color3.fromRGB(0, 0, 0), "Selected" },
+    { "IconSpot", "BackgroundTransparency", 0.702, "Selected" },
+    { "IconSpotGradient", "Enabled", false, "Selected" },
+    { "IconOverlay", "BackgroundTransparency", 0.97, "Selected" }
+  }
+end)
+
+define("Features.Themes", function(script, require)
+  local t = {
+    getThemeValue = function(arg1, arg2, arg3, _)
+      if arg1 then
+        for _, val in pairs(arg1) do
+          local v1, v2, v3 = unpack(val)
+          if arg2 == v1 and arg3 == v2 then
+            return v3
+          end
+        end
+      end
+      return nil
+    end,
+    getInstanceValue = function(arg5, arg6)
+      local success, value = pcall(function()
+        return arg5[arg6]
+      end)
+      if success then
+        return value
+      end
+      return arg5:GetAttribute(arg6)
+    end,
+    getRealInstance = function(arg7)
+      if not arg7:GetAttribute("IsAClippedClone") then
+        return
+      end
+      local OriginalInstance = arg7:FindFirstChild("OriginalInstance")
+      if not OriginalInstance then
+        return
+      end
+      return OriginalInstance.Value
+    end,
+    getClippedClone = function(arg8)
+      if not arg8:GetAttribute("HasAClippedClone") then
+        return
+      end
+      local ClippedClone = arg8:FindFirstChild("ClippedClone")
+      if not ClippedClone then
+        return
+      end
+      return ClippedClone.Value
+    end
+  }
+  local Utility_m = require(script.Parent.Parent.Utility)
+  local Default_m = require(script.Default)
+
+  function t.refresh(arg9, arg10, arg11)
+    if arg11 then
+      local v6 = t.getThemeValue(arg9:getStateGroup(), arg10.Name, arg11) or t.getInstanceValue(arg10, arg11)
+      t.apply(arg9, arg10, arg11, v6, true)
+      return
+    end
+
+    local v7 = arg9:getStateGroup()
+    if not v7 then
+      return
+    end
+
+    local t_1 = { [arg10.Name] = arg10 }
+
+    for _, val_1 in pairs(arg10:GetDescendants()) do
+      local Collective = val_1:GetAttribute("Collective")
+      if Collective then
+        t_1[Collective] = val_1
+      end
+      t_1[val_1.Name] = val_1
+    end
+
+    for _, val_2 in pairs(v7) do
+      local v9, v10, v11 = unpack(val_2)
+      local v12 = t_1[v9]
+      if v12 then
+        t.apply(arg9, v12.Name, v10, v11, true)
+      end
+    end
+  end
+
+  function t.apply(arg12, arg13, arg14, arg15, arg16)
+    if arg12.isDestroyed then
+      return
+    end
+
+    local v13 = arg13
+    local v14
+
+    if typeof(arg13) == "Instance" then
+      v14 = { arg13 }
+      v13 = arg13.Name
+    else
+      v14 = arg12:getInstanceOrCollective(arg13)
+    end
+
+    v13 = arg12.customBehaviours[v13 .. "-" .. arg14]
+
+    for _, val_3 in pairs(v14) do
+      local v16 = t.getClippedClone(val_3)
+      if v16 then
+        table.insert(v14, v16)
+      end
+    end
+
+    for _, val_4 in pairs(v14) do
+      local skip = (arg14 == "Position" and t.getClippedClone(val_4)) or (arg14 == "Size" and t.getRealInstance(val_4))
+      if not skip and (arg16 or arg15 ~= t.getInstanceValue(val_4, arg14)) then
+        local v19 = arg15
+        if v13 then
+          local result = v13(arg15, val_4, arg14)
+          if result ~= nil then
+            v19 = result
+          end
+        end
+        if not pcall(function()
+          val_4[arg14] = v19
+        end) then
+          val_4:SetAttribute(arg14, v19)
+        end
+      end
+    end
+  end
+
+  function t.getModifications(arg17)
+    if typeof(arg17[1]) ~= "table" then
+      arg17 = { arg17 }
+    end
+    return arg17
+  end
+
+  function t.merge(arg18, arg19, arg20)
+    local v20, v21, v22, v23 = table.unpack(arg19)
+    local v24, v25, _, v27 = table.unpack(arg18)
+
+    if v20 == v24 and v21 == v25 and t.statesMatch(v23, v27) then
+      arg18[3] = v22
+      if arg20 then
+        arg20(arg18)
+      end
+      return true
+    end
+
+    return false
+  end
+
+  function t.modify(arg21, arg22, arg23)
+    task.spawn(function()
+      arg23 = arg23 or Utility_m.generateUID()
+      arg22 = t.getModifications(arg22)
+
+      for _, val_5 in pairs(arg22) do
+        local v29, v30, v31, v32 = table.unpack(val_5)
+
+        if v32 == nil then
+          t.modify(arg21, { v29, v30, v31, "Selected" }, arg23)
+          t.modify(arg21, { v29, v30, v31, "Viewing" }, arg23)
+        end
+
+        local v33 = Utility_m.formatStateName(v32 or "Deselected")
+        local stateGroup = arg21:getStateGroup(v33)
+
+        local function updateRecord()
+          for _, val_6 in pairs(stateGroup) do
+            if t.merge(val_6, val_5, function(arg24)
+              arg24[5] = arg23
+              if v33 == arg21.activeState then
+                t.apply(arg21, v29, v30, v31)
+              end
+            end) then
+              return
+            end
+          end
+
+          table.insert(stateGroup, { v29, v30, v31, v33, arg23 })
+
+          if v33 == arg21.activeState then
+            t.apply(arg21, v29, v30, v31)
+          end
+        end
+
+        updateRecord()
+      end
+    end)
+
+    return arg23
+  end
+
+  function t.remove(arg25, arg26)
+    for _, val_7 in pairs(arg25.appearance) do
+      for index = #val_7, 1, -1 do
+        if val_7[index][5] == arg26 then
+          table.remove(val_7, index)
+        end
+      end
+    end
+    t.rebuild(arg25)
+  end
+
+  function t.removeWith(arg27, arg28, arg29, arg30)
+    for key_8, val_8 in pairs(arg27.appearance) do
+      if arg30 == key_8 or not arg30 then
+        for index_1 = #val_8, 1, -1 do
+          local v34 = val_8[index_1]
+          if v34[1] == arg28 and v34[2] == arg29 then
+            table.remove(val_8, index_1)
+          end
+        end
+      end
+    end
+    t.rebuild(arg27)
+  end
+
+  function t.change(arg31)
+    for _, val_9 in pairs((arg31:getStateGroup())) do
+      local v36, v37, v38 = unpack(val_9)
+      t.apply(arg31, v36, v37, v38)
+    end
+  end
+
+  function t.set(arg32, arg33)
+    local ThemesJanitor = arg32.themesJanitor
+    ThemesJanitor:clean()
+    ThemesJanitor:add(arg32.stateChanged:Connect(function()
+      t.change(arg32)
+    end))
+
+    if typeof(arg33) == "Instance" and arg33:IsA("ModuleScript") then
+      arg33 = require(arg33)
+    end
+
+    arg32.appliedTheme = arg33
+    t.rebuild(arg32)
+  end
+
+  function t.statesMatch(arg34, arg35)
+    local v39 = arg34 and string.lower(arg34)
+    local v40 = arg35
+    if v40 then
+      v40 = string.lower(arg35)
+    end
+    return v39 == v40 or (not arg34 or not arg35)
+  end
+
+  function t.rebuild(arg36)
+    local t_3 = { "Deselected", "Selected", "Viewing" }
+    local AppliedTheme = arg36.appliedTheme
+
+    local function generateTheme()
+      for _, val_10 in pairs(t_3) do
+        local t_4 = {}
+
+        local function updateDetails(arg37, arg38)
+          if not arg37 then
+            return
+          end
+          for _, val_11 in pairs(arg37) do
+            local v42 = val_11[5]
+            if t.statesMatch(arg38, val_11[4]) then
+              local v43 = val_11[1] .. "-" .. val_11[2]
+              local v44 = Utility_m.copyTable(val_11)
+              v44[5] = v42
+              t_4[v43] = v44
+            end
+          end
+        end
+
+        if val_10 == "Selected" then
+          updateDetails(Default_m, "Deselected")
+        end
+
+        updateDetails(Default_m, "Empty")
+        updateDetails(Default_m, val_10)
+
+        if AppliedTheme ~= Default_m then
+          if val_10 == "Selected" then
+            updateDetails(AppliedTheme, "Deselected")
+          end
+          updateDetails(Default_m, "Empty")
+          updateDetails(AppliedTheme, val_10)
+        end
+
+        local t_5 = {}
+        local v45 = arg36.appearance[val_10]
+
+        if v45 then
+          for _, val_12 in pairs(v45) do
+            local v46 = val_12[5]
+            if v46 ~= nil then
+              table.insert(t_5, { val_12[1], val_12[2], val_12[3], val_10, v46 })
+            end
+          end
+        end
+
+        updateDetails(t_5, val_10)
+        local t_7 = {}
+
+        for _, val_13 in pairs(t_4) do
+          table.insert(t_7, val_13)
+        end
+
+        arg36.appearance[val_10] = t_7
+      end
+
+      t.change(arg36)
+    end
+
+    generateTheme()
+  end
+
+  return t
+end)
+
+define("Features.Gamepad", function(script, require)
+  local GamepadService = game:GetService("GamepadService")
+  local UserInputService = game:GetService("UserInputService")
+  local GuiService = game:GetService("GuiService")
+  local t = {}
+  local v1 = nil
+  local KeyCode_DPadUp = Enum.KeyCode.DPadUp
+
+  function t.start(arg1)
+    v1 = arg1
+    v1.highlightKey = if v1.highlightKey == nil then KeyCode_DPadUp else v1.highlightKey
+    v1.highlightIcon = false
+    task.delay(1, function()
+      local IconsDictionary = v1.iconsDictionary
+
+      local v5 = nil
+      local v6 = KeyCode_DPadUp ~= v1.highlightKey
+      local v7 = KeyCode_DPadUp ~= v1.highlightKey
+      local Selection_m = require(script.Parent.Parent.Elements.Selection)
+
+      local function updateSelectedObject()
+        local SelectedObject = GuiService.SelectedObject
+        local v8 = SelectedObject
+
+        if v8 then
+          v8 = SelectedObject:GetAttribute("CorrespondingIconUID")
+        end
+
+        local v9 = v8
+
+        if v9 then
+          v9 = IconsDictionary[v8]
+        end
+
+        local GamepadEnabled = UserInputService.GamepadEnabled
+        local v11
+
+        if v9 then
+          if GamepadEnabled then
+            v8 = v9:getInstance("ClickRegion")
+            local v10 = v9.selection
+
+            if not v10 then
+              v10 = v9.janitor:add(Selection_m(v1))
+              v10:SetAttribute("IgnoreVisibilityUpdater", true)
+              v10.Parent = v9.widget
+              v9.selection = v10
+              v9:refreshAppearance(v10)
+            end
+
+            v8.SelectionImageObject = v10.Selection
+          end
+
+          if v5 and v5 ~= v9 then
+            v5:setIndicator()
+          end
+
+          v11 = if not GamepadEnabled then nil else if v7 then nil else if v9.parentIconUID then nil else Enum.KeyCode.ButtonB
+          v5 = v9
+          local v12
+          v1.lastHighlightedIcon, v12 = v9, v11
+          v9:setIndicator(v12)
+
+          return
+        end
+
+        v11 = if not GamepadEnabled then nil else if v6 then nil else v1.highlightKey
+
+        if not v5 then
+          v5 = t.getIconToHighlight()
+        end
+
+        if v11 == v1.highlightKey then
+          v6 = true
+        end
+
+        if v5 then
+          v5:setIndicator(v11)
+        end
+      end
+
+      GuiService:GetPropertyChangedSignal("SelectedObject"):Connect(updateSelectedObject)
+      local PreferredInput_Gamepad = Enum.PreferredInput.Gamepad
+
+      local function preferredInputChanged()
+        if not (if UserInputService.PreferredInput ~= PreferredInput_Gamepad then false else true) then
+          v6 = false
+          v7 = false
+        end
+        updateSelectedObject()
+      end
+
+      UserInputService:GetPropertyChangedSignal("PreferredInput"):Connect(preferredInputChanged)
+
+      if not (if UserInputService.PreferredInput ~= PreferredInput_Gamepad then false else true) then
+        v6 = false
+        v7 = false
+      end
+
+      updateSelectedObject()
+      UserInputService.InputBegan:Connect(function(arg2, _)
+        if arg2.UserInputType == Enum.UserInputType.MouseButton1 then
+          local SelectedObject_1 = GuiService.SelectedObject
+          local v15 = SelectedObject_1
+
+          if v15 then
+            v15 = SelectedObject_1:GetAttribute("CorrespondingIconUID")
+          end
+
+          local v16 = v15
+
+          if v16 then
+            v16 = IconsDictionary[v15]
+          end
+
+          if v16 then
+            GuiService.SelectedObject = nil
+          end
+
+          return
+        end
+
+        if arg2.KeyCode ~= v1.highlightKey then
+          return
+        end
+
+        local v17 = t.getIconToHighlight()
+
+        if v17 then
+          if GamepadService.GamepadCursorEnabled then
+            task.wait(0.2)
+            GamepadService:DisableGamepadCursor()
+          end
+          GuiService.SelectedObject = v17:getInstance("ClickRegion")
+        end
+      end)
+    end)
+  end
+
+  function t.getIconToHighlight()
+    local v18 = v1.highlightIcon
+    local IconsDictionary_1 = v1.iconsDictionary
+
+    if not v18 then
+      v18 = v1.lastHighlightedIcon
+    end
+
+    if not v18 then
+      local X = nil
+      for _, val in pairs(IconsDictionary_1) do
+        if not val.parentIconUID and (not X or X > val.widget.AbsolutePosition.X) then
+          v18 = val
+          X = v18.widget.AbsolutePosition.X
+        end
+      end
+    end
+
+    return v18
+  end
+
+  function t.registerButton(arg4)
+    local v20 = false
+    arg4.InputBegan:Connect(function(_)
+      v20 = true
+      task.wait()
+      task.wait()
+      v20 = false
+    end)
+    local v22 = UserInputService.InputBegan:Connect(function(input)
+      task.wait()
+
+      if input.KeyCode == Enum.KeyCode.ButtonA and v20 then
+        task.wait(0.2)
+        GamepadService:DisableGamepadCursor()
+        GuiService.SelectedObject = arg4
+        return
+      end
+
+      local v21 = GuiService.SelectedObject == arg4
+      local Name = input.KeyCode.Name
+
+      if table.find({ "ButtonB", "ButtonSelect" }, Name) and (v21 and (Name ~= "ButtonSelect" or GamepadService.GamepadCursorEnabled)) then
+        GuiService.SelectedObject = nil
+      end
+    end)
+    arg4.Destroying:Once(function()
+      v22:Disconnect()
+    end)
+  end
+
+  return t
+end)
+
+define("Features.Overflow", function(script, require)
+  local t = {}
+  local t_1 = {}
+  local t_2 = {}
+  local IconsDictionary = nil
+  local t_3 = {}
+  local CurrentCamera = workspace.CurrentCamera
+  local t_4 = {}
+  local Utility_m = require(script.Parent.Parent.Utility)
+  local v2 = false
+  local v3 = nil
+
+  function t.start(arg1)
+    v3 = arg1
+    IconsDictionary = v3.iconsDictionary
+    local v4 = nil
+
+    for _, val in pairs(v3.container) do
+      v4 = if v4 ~= nil then v4 else if val.ScreenInsets ~= Enum.ScreenInsets.TopbarSafeInsets then v4 else val
+
+      for _, val_1 in pairs(val.Holders:GetChildren()) do
+        if val_1:GetAttribute("IsAHolder") then
+          t_1[val_1.Name] = val_1
+        end
+      end
+    end
+
+    local v6 = false
+    local v7 = Utility_m.createStagger(0.1, function(arg2)
+      if not v6 then
+        return
+      end
+
+      if not arg2 then
+        t.updateAvailableIcons("Center")
+      end
+
+      t.updateBoundary("Left")
+      t.updateBoundary("Right")
+    end)
+    task.delay(0.5, function()
+      v6 = true
+      v7()
+    end)
+    task.delay(2, function()
+      v2 = true
+      v7()
+    end)
+    v3.iconAdded:Connect(v7)
+    v3.iconRemoved:Connect(v7)
+    v3.iconChanged:Connect(v7)
+    CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+      v7(true)
+    end)
+    v4:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+      v7(true)
+    end)
+  end
+
+  function t.getWidth(arg3, _)
+    local Widget = arg3.widget
+    return Widget:GetAttribute("TargetWidth") or Widget.AbsoluteSize.X
+  end
+
+  function t.getAvailableIcons(arg5)
+    return t_2[arg5] or t.updateAvailableIcons(arg5)
+  end
+
+  function t.updateAvailableIcons(arg6)
+    local v10 = 0
+    local t_5 = {}
+
+    for _, val_2 in pairs(IconsDictionary) do
+      local ParentIconUID = val_2.parentIconUID
+
+      if (not ParentIconUID or t_3[ParentIconUID]) and val_2.alignment == arg6 and not t_3[val_2.UID] then
+        table.insert(t_5, val_2)
+        v10 += 1
+      end
+    end
+
+    if v10 <= 0 then
+      return {}
+    end
+
+    table.sort(t_5, function(arg7, arg8)
+      local LayoutOrder = arg7.widget.LayoutOrder
+      local LayoutOrder_1 = arg8.widget.LayoutOrder
+      local ParentIconUID_1 = arg7.parentIconUID
+      local ParentIconUID_2 = arg8.parentIconUID
+
+      return if ParentIconUID_1 ~= ParentIconUID_2 then if not ParentIconUID_2 then if not ParentIconUID_1 then nil else true else false else if not (LayoutOrder < LayoutOrder_1) then if not (LayoutOrder > LayoutOrder_1) then arg7.widget.AbsolutePosition.X < arg8.widget.AbsolutePosition.X else false else true
+    end)
+    t_2[arg6] = t_5
+
+    return t_5
+  end
+
+  function t.getRealXPositions(arg9, arg10)
+    local v12 = if arg9 ~= "Left" then false else true
+    local v13 = t_1[arg9]
+    local X = v13.AbsolutePosition.X
+    local X_1 = v13.AbsoluteSize.X
+    local Offset = v13.UIListLayout.Padding.Offset
+    local v14 = v12 and X or X + X_1
+    local t_6 = {}
+
+    if v12 then
+      Utility_m.reverseTable(arg10)
+    end
+
+    for index = #arg10, 1, -1 do
+      local v15 = arg10[index]
+      local v16 = t.getWidth(v15)
+
+      if not v12 then
+        v14 -= v16
+      end
+
+      t_6[v15.UID] = v14
+
+      if v12 then
+        v14 += v16
+      end
+
+      local v17 = v12 and Offset or -Offset
+      v14 += v17
+    end
+
+    return t_6
+  end
+
+  local v18 = false
+
+  function t.updateBoundary(arg11)
+    local v19 = t_1[arg11]
+    local UIListLayout = v19.UIListLayout
+    local X_2 = v19.AbsolutePosition.X
+    local X_3 = v19.AbsoluteSize.X
+    local Offset_1 = UIListLayout.Padding.Offset
+    local Offset_2 = UIListLayout.Padding.Offset
+    local v20 = t.updateAvailableIcons(arg11)
+    local v21 = 0
+    local v22 = 0
+
+    for _, val_3 in pairs(v20) do
+      v21 += t.getWidth(val_3) + Offset_2
+      v22 += 1
+    end
+
+    if v22 <= 0 then
+      return
+    end
+
+    v22 = arg11 == "Center"
+    v21 = arg11 == "Left"
+    local v23 = not v21
+    local v24 = t_4[arg11]
+    local v25
+
+    if not v24 and not v22 and #v20 > 0 then
+      v25 = if not v21 then 9999999 else -9999999
+      v24 = v3.new()
+      v24:setImage(6069276526, "Deselected")
+      v24:setName("Overflow" .. arg11)
+      v24:setOrder(v25)
+      v24:setAlignment(arg11)
+      v24:autoDeselect(false)
+      v24.isAnOverflow = true
+      v24:select("OverflowStart", v24)
+      v24:setEnabled(false)
+      t_4[arg11] = v24
+      t_3[v24.UID] = true
+    end
+
+    v22 = if arg11 ~= "Left" then "Left" else "Right"
+    v25 = t.updateAvailableIcons(v22)
+    local v30 = v21 and v25[1] or v23 and v25[#v25]
+    local v31 = t_4[v22]
+    local v32 = v21 and X_2 + X_3 or X_2
+    local v36
+
+    if v30 then
+      local v34 = t.getRealXPositions(v22, v25)[v30.UID]
+      local v35 = t.getWidth(v30)
+      v36 = v21 and v34 - Offset_1 or v34 + v35 + Offset_1
+      v32 = v36
+    end
+
+    local v37 = 0
+
+    local function checkToShiftCentralIcon()
+      local v38 = t.getAvailableIcons("Center")
+      local v39 = if not v21 then #v38 else 1
+      local v40 = v38[v39]
+
+      if v40 and not v40.hasRelocatedInOverflow then
+        v38 = v21 and v20[#v20] or v23 and v20[1]
+        local v41 = v40.widget.AbsolutePosition.X
+        local X_4 = v38.widget.AbsolutePosition.X
+        local v42 = t.getWidth(v38)
+        v38 = v21 and v41 - Offset_1 or v41 + t.getWidth(v40) + Offset_1
+        v41 = v21 and X_4 + v42 or X_4
+        v42 = false
+
+        if v21 then
+          if v38 < v41 then
+            if not v2 then
+              if not v18 then
+                v18 = true
+                task.delay(3, t.updateBoundary, arg11)
+              end
+              return
+            end
+
+            v40:align("Left")
+            v40.hasRelocatedInOverflow = true
+            v42 = true
+          end
+        elseif v23 and v38 > v41 then
+          if not v2 or v41 < 0 then
+            if not v18 then
+              v18 = true
+              task.delay(3, t.updateBoundary, arg11)
+            end
+            return
+          end
+
+          v40:align("Right")
+          v40.hasRelocatedInOverflow = true
+          v42 = true
+        end
+
+        if v42 then
+          v37 += 1
+
+          if v37 <= 4 then
+            t.updateAvailableIcons("Center")
+            checkToShiftCentralIcon()
+          end
+        end
+      end
+    end
+
+    checkToShiftCentralIcon()
+
+    if v24 then
+      v22 = v24:getInstance("Menu")
+      local v43 = X_2 + X_3
+      v36 = X_3
+
+      if v22 and v31 then
+        local X_5 = v31.widget.AbsolutePosition.X
+        local v44 = t.getWidth(v31)
+        local v45 = v21 and X_5 - Offset_1 or X_5 + v44 + Offset_1
+        v44 = v22.AbsoluteCanvasSize.X >= v31:getInstance("Menu").AbsoluteCanvasSize.X and true
+        local v47 = X_2 + X_3 / 2
+        local v48 = v21 and v47 - Offset_1 / 2 or v47 + Offset_1 / 2
+        local v49 = v48
+        v49 = if not v44 then v49 else v45
+        v48 = v21 and v49 - X_2 or v43 - v49
+        v36 = v48
+      end
+
+      v43 = v22
+
+      if v43 then
+        v43 = v22:GetAttribute("MaxWidth")
+      end
+
+      v36 = Utility_m.round(v36)
+
+      if v22 and v43 ~= v36 then
+        v22:SetAttribute("MaxWidth", v36)
+      end
+    end
+
+    v31 = false
+    local v50 = t.getRealXPositions(arg11, v20)
+
+    for index_1 = #v20, 1, -1 do
+      local v51 = v20[index_1]
+      local v52 = t.getWidth(v51)
+      local v53 = v50[v51.UID]
+      v31 = v21 and v32 <= v53 + v52 or (if not v23 then v31 else if not (v32 >= v53) then v31 else true)
+    end
+
+    for index_2 = #v20, 1, -1 do
+      v32 = v20[index_2]
+
+      if not t_3[v32.UID] then
+        if v31 then
+          if not v32.parentIconUID then
+            v32:joinMenu(v24)
+          end
+        elseif v32.parentIconUID then
+          v32:leave()
+        end
+      end
+    end
+
+    if v24.isEnabled ~= v31 then
+      v24:setEnabled(v31)
+    end
+
+    if v24.isEnabled and not v24.overflowAlreadyOpened then
+      v24.overflowAlreadyOpened = true
+      v24:select()
+    end
+  end
+
+  return t
+end)
+
+define("Elements.Container", function(script, require)
+  local v1 = false
+  local v2 = 0
+
+  return function(arg1)
+    local GuiService = game:GetService("GuiService")
+    local t = {}
+    local v3 = require(script.Parent.Parent.Packages.GoodSignal).new()
+    local v4 = GuiService:GetGuiInset()
+    local v5 = 0
+    local v6 = 0
+    local v7 = 0
+    local v8 = 0
+
+    local function checkInset(arg2)
+      local Height = GuiService.TopbarInset.Height
+      local v9 = Height <= 36
+      local v10 = GuiService:IsTenFootInterface()
+      arg1.isOldTopbar = v9
+      v8 += 1
+
+      if Height == 0 and arg2 == nil then
+        task.delay(5, function()
+          checkInset("ForceConvertToOld")
+        end)
+      elseif v8 == 1 then
+        task.delay(5, function()
+          if v8 == 1 then
+            checkInset()
+          end
+        end)
+      end
+
+      if arg1.isOldTopbar and (not v10 and (v1 == false and (Height ~= 0 or arg2 == "ForceConvertToOld"))) then
+        v1 = true
+        task.defer(function()
+          local Classic_m = require(script.Parent.Parent.Features.Themes.Classic)
+          arg1.modifyBaseTheme(Classic_m)
+
+          local function decideToHideTopbar()
+            if GuiService.MenuIsOpen then
+              arg1.setTopbarEnabled(false, true)
+              return
+            end
+            arg1.setTopbarEnabled()
+          end
+
+          GuiService:GetPropertyChangedSignal("MenuIsOpen"):Connect(decideToHideTopbar)
+
+          if GuiService.MenuIsOpen then
+            arg1.setTopbarEnabled(false, true)
+            return
+          end
+
+          arg1.setTopbarEnabled()
+        end)
+      end
+
+      v5 = if not v9 then v4.Y - 50 else 12
+      v6 = if not v9 then 0 else 2
+      v7 = -2
+
+      if v10 then
+        v5 = 10
+        v6 = -9
+      end
+
+      if GuiService.TopbarInset.Height == 0 and not v1 then
+        v6 += 13
+        v7 = 50
+      end
+
+      v3:Fire(v4)
+      local Y = v4.Y
+
+      if Y ~= v2 then
+        v2 = Y
+        task.defer(function()
+          arg1.insetHeightChanged:Fire(Y)
+        end)
+      end
+    end
+
+    GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(checkInset)
+    checkInset("FirstTime")
+    local TopbarStandard_ScreenGui = Instance.new("ScreenGui")
+    v3:Connect(function()
+      TopbarStandard_ScreenGui:SetAttribute("StartInset", v5)
+    end)
+    TopbarStandard_ScreenGui.Name = "TopbarStandard"
+    TopbarStandard_ScreenGui.Enabled = true
+    TopbarStandard_ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    TopbarStandard_ScreenGui.IgnoreGuiInset = true
+    TopbarStandard_ScreenGui.ResetOnSpawn = false
+    TopbarStandard_ScreenGui.ScreenInsets = Enum.ScreenInsets.TopbarSafeInsets
+    t[TopbarStandard_ScreenGui.Name] = TopbarStandard_ScreenGui
+    arg1.baseDisplayOrderChanged:Connect(function()
+      TopbarStandard_ScreenGui.DisplayOrder = arg1.baseDisplayOrder
+    end)
+    local Holders_Frame = Instance.new("Frame")
+    Holders_Frame.Name = "Holders"
+    Holders_Frame.BackgroundTransparency = 1
+    v3:Connect(function()
+      Holders_Frame.Position = UDim2.new(0, 0, 0, v6)
+      Holders_Frame.Size = UDim2.new(1, 0, 1, v7)
+    end)
+    Holders_Frame.Visible = true
+    Holders_Frame.ZIndex = 1
+    Holders_Frame.Parent = TopbarStandard_ScreenGui
+    local v14 = TopbarStandard_ScreenGui:Clone()
+    local Holders = v14.Holders
+
+    local function updateCenteredHoldersHeight()
+      Holders.Size = UDim2.new(1, 0, 0, GuiService.TopbarInset.Height + v7)
+    end
+
+    v14.Name = "TopbarCentered"
+    v14.ScreenInsets = Enum.ScreenInsets.None
+    arg1.baseDisplayOrderChanged:Connect(function()
+      v14.DisplayOrder = arg1.baseDisplayOrder
+    end)
+    t[v14.Name] = v14
+    v3:Connect(updateCenteredHoldersHeight)
+    Holders.Size = UDim2.new(1, 0, 0, GuiService.TopbarInset.Height + v7)
+    local v16 = TopbarStandard_ScreenGui:Clone()
+    v16.Name ..= "Clipped"
+    v16.DisplayOrder += 1
+    arg1.baseDisplayOrderChanged:Connect(function()
+      v16.DisplayOrder = arg1.baseDisplayOrder + 1
+    end)
+    t[v16.Name] = v16
+    local v17 = v14:Clone()
+    v17.Name ..= "Clipped"
+    v17.DisplayOrder += 1
+    arg1.baseDisplayOrderChanged:Connect(function()
+      v17.DisplayOrder = arg1.baseDisplayOrder + 1
+    end)
+    t[v17.Name] = v17
+    local Left_ScrollingFrame = Instance.new("ScrollingFrame")
+    Left_ScrollingFrame:SetAttribute("IsAHolder", true)
+    Left_ScrollingFrame.Name = "Left"
+    v3:Connect(function()
+      Left_ScrollingFrame.Position = UDim2.fromOffset(v5, 0)
+    end)
+    Left_ScrollingFrame.Size = UDim2.new(1, -24, 1, 0)
+    Left_ScrollingFrame.BackgroundTransparency = 1
+    Left_ScrollingFrame.Visible = true
+    Left_ScrollingFrame.ZIndex = 1
+    Left_ScrollingFrame.Active = false
+    Left_ScrollingFrame.ClipsDescendants = true
+    Left_ScrollingFrame.HorizontalScrollBarInset = Enum.ScrollBarInset.None
+    Left_ScrollingFrame.CanvasSize = UDim2.new(0, 0, 1, -1)
+    Left_ScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.X
+    Left_ScrollingFrame.ScrollingDirection = Enum.ScrollingDirection.X
+    Left_ScrollingFrame.ScrollBarThickness = 0
+    Left_ScrollingFrame.BorderSizePixel = 0
+    Left_ScrollingFrame.Selectable = false
+    Left_ScrollingFrame.ScrollingEnabled = false
+    Left_ScrollingFrame.ElasticBehavior = Enum.ElasticBehavior.Never
+    Left_ScrollingFrame.Parent = Holders_Frame
+    local UIListLayout = Instance.new("UIListLayout")
+    v3:Connect(function()
+      UIListLayout.Padding = UDim.new(0, v5)
+    end)
+    UIListLayout.FillDirection = Enum.FillDirection.Horizontal
+    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+    UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    UIListLayout.Parent = Left_ScrollingFrame
+    local v20 = Left_ScrollingFrame:Clone()
+    v3:Connect(function()
+      v20.UIListLayout.Padding = UDim.new(0, v5)
+    end)
+    v20.ScrollingEnabled = false
+    v20.UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    v20.Name = "Center"
+    v20.Parent = Holders
+    local v21 = Left_ScrollingFrame:Clone()
+    v3:Connect(function()
+      v21.UIListLayout.Padding = UDim.new(0, v5)
+    end)
+    v21.UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+    v21.Name = "Right"
+    v21.AnchorPoint = Vector2.new(1, 0)
+    v21.Position = UDim2.new(1, -12, 0, 0)
+    v21.Parent = Holders_Frame
+    v3:Fire(v4)
+
+    return t
+  end
+end)
+
+define("Elements.Selection", function(script, require)
+  return function(_)
+    local SelectionContainer_Frame = Instance.new("Frame")
+    SelectionContainer_Frame.Name = "SelectionContainer"
+    SelectionContainer_Frame.Visible = false
+    local Frame_1 = Instance.new("Frame")
+    Frame_1.Name = "Selection"
+    Frame_1.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Frame_1.BackgroundTransparency = 1
+    Frame_1.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    Frame_1.BorderSizePixel = 0
+    Frame_1.Parent = SelectionContainer_Frame
+    local UIStroke = Instance.new("UIStroke")
+    UIStroke.Name = "UIStroke"
+    UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    UIStroke.Color = Color3.fromRGB(255, 255, 255)
+    UIStroke.Thickness = 3
+    UIStroke.Parent = Frame_1
+    local SelectionGradient_UIGradient = Instance.new("UIGradient")
+    SelectionGradient_UIGradient.Name = "SelectionGradient"
+    SelectionGradient_UIGradient.Parent = UIStroke
+    local UICorner = Instance.new("UICorner")
+    UICorner:SetAttribute("Collective", "IconCorners")
+    UICorner.Name = "UICorner"
+    UICorner.CornerRadius = UDim.new(1, 0)
+    UICorner.Parent = Frame_1
+    local RunService = game:GetService("RunService")
+    local GuiService = game:GetService("GuiService")
+    local v1 = 1
+    Frame_1:GetAttributeChangedSignal("RotationSpeed"):Connect(function()
+      v1 = Frame_1:GetAttribute("RotationSpeed")
+    end)
+    RunService.Heartbeat:Connect(function()
+      if not GuiService.SelectedObject then
+        return
+      end
+      SelectionGradient_UIGradient.Rotation = os.clock() * v1 * 100 % 360
+    end)
+
+    return SelectionContainer_Frame
+  end
+end)
+
+define("Elements.Caption", function(script, require)
+  local color = Color3.fromRGB(39, 41, 48)
+
+  return function(arg1)
+    local ClickRegion = arg1:getInstance("ClickRegion")
+    local Caption_CanvasGroup = Instance.new("CanvasGroup")
+    Caption_CanvasGroup.Name = "Caption"
+    Caption_CanvasGroup.AnchorPoint = Vector2.new(0.5, 0)
+    Caption_CanvasGroup.BackgroundTransparency = 1
+    Caption_CanvasGroup.BorderSizePixel = 0
+    Caption_CanvasGroup.GroupTransparency = 1
+    Caption_CanvasGroup.Position = UDim2.fromOffset(0, 0)
+    Caption_CanvasGroup.Visible = false
+    Caption_CanvasGroup.ZIndex = 30
+    Caption_CanvasGroup.Parent = ClickRegion
+    local Box_Frame = Instance.new("Frame")
+    Box_Frame.Name = "Box"
+    Box_Frame.AutomaticSize = Enum.AutomaticSize.XY
+    Box_Frame.BackgroundColor3 = color
+    Box_Frame.BorderSizePixel = 0
+    Box_Frame.Position = UDim2.fromOffset(4, 7)
+    Box_Frame.ZIndex = 12
+    Box_Frame.Visible = false
+    Box_Frame.Parent = Caption_CanvasGroup
+    local Header_TextLabel = Instance.new("TextLabel")
+    Header_TextLabel.Name = "Header"
+    Header_TextLabel.FontFace = Font.new(
+      "rbxasset://fonts/families/BuilderSans.json",
+      Enum.FontWeight.Medium,
+      Enum.FontStyle.Normal
+    )
+    Header_TextLabel.Text = ""
+    Header_TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Header_TextLabel.TextSize = 15
+    Header_TextLabel.TextTruncate = Enum.TextTruncate.None
+    Header_TextLabel.TextWrapped = false
+    Header_TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    Header_TextLabel.AutomaticSize = Enum.AutomaticSize.X
+    Header_TextLabel.BackgroundTransparency = 1
+    Header_TextLabel.BorderSizePixel = 0
+    Header_TextLabel.LayoutOrder = 1
+    Header_TextLabel.Size = UDim2.fromOffset(0, 16)
+    Header_TextLabel.ZIndex = 18
+    Header_TextLabel.Parent = Box_Frame
+    local Layout_UIListLayout = Instance.new("UIListLayout")
+    Layout_UIListLayout.Name = "Layout"
+    Layout_UIListLayout.Padding = UDim.new(0, 8)
+    Layout_UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    Layout_UIListLayout.Parent = Box_Frame
+    local CaptionCorner_UICorner = Instance.new("UICorner")
+    CaptionCorner_UICorner.Name = "CaptionCorner"
+    CaptionCorner_UICorner.Parent = Box_Frame
+    local Padding_UIPadding = Instance.new("UIPadding")
+    Padding_UIPadding.Name = "Padding"
+    Padding_UIPadding.PaddingBottom = UDim.new(0, 12)
+    Padding_UIPadding.PaddingLeft = UDim.new(0, 12)
+    Padding_UIPadding.PaddingRight = UDim.new(0, 12)
+    Padding_UIPadding.PaddingTop = UDim.new(0, 12)
+    Padding_UIPadding.Parent = Box_Frame
+    local Frame_1 = Instance.new("Frame")
+    Frame_1.Name = "Hotkeys"
+    Frame_1.AutomaticSize = Enum.AutomaticSize.Y
+    Frame_1.BackgroundTransparency = 1
+    Frame_1.BorderSizePixel = 0
+    Frame_1.LayoutOrder = 3
+    Frame_1.Size = UDim2.fromScale(1, 0)
+    Frame_1.Visible = false
+    Frame_1.Parent = Box_Frame
+    local UIListLayout_1 = Instance.new("UIListLayout")
+    UIListLayout_1.Name = "Layout1"
+    UIListLayout_1.Padding = UDim.new(0, 6)
+    UIListLayout_1.FillDirection = Enum.FillDirection.Vertical
+    UIListLayout_1.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    UIListLayout_1.HorizontalFlex = Enum.UIFlexAlignment.None
+    UIListLayout_1.ItemLineAlignment = Enum.ItemLineAlignment.Automatic
+    UIListLayout_1.VerticalFlex = Enum.UIFlexAlignment.None
+    UIListLayout_1.SortOrder = Enum.SortOrder.LayoutOrder
+    UIListLayout_1.Parent = Frame_1
+    local Key1_ImageLabel = Instance.new("ImageLabel")
+    Key1_ImageLabel.Name = "Key1"
+    Key1_ImageLabel.Image = "rbxasset://textures/ui/Controls/key_single.png"
+    Key1_ImageLabel.ImageTransparency = 0.7
+    Key1_ImageLabel.ScaleType = Enum.ScaleType.Slice
+    Key1_ImageLabel.SliceCenter = Rect.new(5, 5, 23, 24)
+    Key1_ImageLabel.AutomaticSize = Enum.AutomaticSize.X
+    Key1_ImageLabel.BackgroundTransparency = 1
+    Key1_ImageLabel.BorderSizePixel = 0
+    Key1_ImageLabel.LayoutOrder = 1
+    Key1_ImageLabel.Size = UDim2.fromOffset(0, 30)
+    Key1_ImageLabel.ZIndex = 15
+    Key1_ImageLabel.Parent = Frame_1
+    local UIPadding_1 = Instance.new("UIPadding")
+    UIPadding_1.Name = "Inset"
+    UIPadding_1.PaddingLeft = UDim.new(0, 8)
+    UIPadding_1.PaddingRight = UDim.new(0, 8)
+    UIPadding_1.Parent = Key1_ImageLabel
+    local TextLabel_1 = Instance.new("TextLabel")
+    TextLabel_1.AutoLocalize = false
+    TextLabel_1.Name = "LabelContent"
+    TextLabel_1.FontFace = Font.new(
+      "rbxasset://fonts/families/GothamSSm.json",
+      Enum.FontWeight.Medium,
+      Enum.FontStyle.Normal
+    )
+    TextLabel_1.Text = ""
+    TextLabel_1.TextColor3 = Color3.fromRGB(189, 190, 190)
+    TextLabel_1.TextSize = 15
+    TextLabel_1.AutomaticSize = Enum.AutomaticSize.X
+    TextLabel_1.BackgroundTransparency = 1
+    TextLabel_1.BorderSizePixel = 0
+    TextLabel_1.Position = UDim2.fromOffset(0, -1)
+    TextLabel_1.Size = UDim2.fromScale(1, 1)
+    TextLabel_1.ZIndex = 16
+    TextLabel_1.Parent = Key1_ImageLabel
+    local ImageLabel_1 = Instance.new("ImageLabel")
+    ImageLabel_1.Name = "Caret"
+    ImageLabel_1.Image = "rbxasset://LuaPackages/Packages/_Index/FoundationImages/FoundationImages/SpriteSheets/img_set_2x_1.png"
+    ImageLabel_1.ImageColor3 = color
+    ImageLabel_1.ImageRectOffset = Vector2.new(0, 494)
+    ImageLabel_1.ImageRectSize = Vector2.new(32, 16)
+    ImageLabel_1.AnchorPoint = Vector2.new(0, 0.5)
+    ImageLabel_1.BackgroundTransparency = 1
+    ImageLabel_1.BorderSizePixel = 0
+    ImageLabel_1.Position = UDim2.new(0, 0, 0, 4)
+    ImageLabel_1.Rotation = 180
+    ImageLabel_1.Size = UDim2.fromOffset(16, 8)
+    ImageLabel_1.ZIndex = 12
+    ImageLabel_1.Parent = Caption_CanvasGroup
+    local CaptionJanitor = arg1.captionJanitor
+    local _, v3 = arg1:clipOutside(Caption_CanvasGroup)
+    v3.BorderSizePixel = 0
+    v3.BackgroundTransparency = 1
+    v3.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    v3.AutomaticSize = Enum.AutomaticSize.None
+
+    local function matchSize()
+      local AbsoluteSize_1 = Caption_CanvasGroup.AbsoluteSize
+      v3.Size = UDim2.fromOffset(AbsoluteSize_1.X, AbsoluteSize_1.Y)
+    end
+
+    CaptionJanitor:add(
+      Caption_CanvasGroup:GetPropertyChangedSignal("AbsoluteSize"):Connect(matchSize)
+    )
+    local AbsoluteSize_2 = Caption_CanvasGroup.AbsoluteSize
+    v3.Size = UDim2.fromOffset(AbsoluteSize_2.X, AbsoluteSize_2.Y)
+    local v5 = false
+    local Header = Caption_CanvasGroup.Box.Header
+    local UserInputService = game:GetService("UserInputService")
+
+    local function updateHotkey(arg2)
+      local KeyboardEnabled = UserInputService.KeyboardEnabled
+      local v6 = Caption_CanvasGroup:GetAttribute("CaptionText") or ""
+      local v7 = if v6 ~= "_hotkey_" then false else true
+
+      if not KeyboardEnabled and v7 then
+        arg1:setCaption()
+        return
+      end
+
+      Header.Text = v6
+      Header.Visible = not v7
+
+      if arg2 then
+        TextLabel_1.Text = arg2.Name
+        Frame_1.Visible = true
+      end
+
+      if not KeyboardEnabled then
+        Frame_1.Visible = false
+      end
+    end
+
+    Caption_CanvasGroup:GetAttributeChangedSignal("CaptionText"):Connect(updateHotkey)
+    local EasingStyle_Quad = Enum.EasingStyle.Quad
+    local tweenInfo = TweenInfo.new(0.2, EasingStyle_Quad, Enum.EasingDirection.In)
+    local tweenInfo_1 = TweenInfo.new(0.2, EasingStyle_Quad, Enum.EasingDirection.Out)
+    local TweenService = game:GetService("TweenService")
+    local RunService = game:GetService("RunService")
+
+    local function updatePosition(arg4)
+      if not v5 then
+        return
+      end
+
+      local v10 = if arg4 == nil then v5 else arg4
+      local v11 = not v10
+      local v12 = if v11 ~= nil then v11 else v5
+      local v13 = if not v12 then 2 else 10
+      local udim2 = UDim2.new(0.5, 0, 1, v13)
+      v12 = if v10 ~= nil then v10 else v5
+      v13 = if not v12 then 2 else 10
+      local udim2_1 = UDim2.new(0.5, 0, 1, v13)
+
+      if v10 then
+        ImageLabel_1.Position = UDim2.fromOffset(0, ImageLabel_1.Position.Y.Offset)
+        Caption_CanvasGroup.AutomaticSize = Enum.AutomaticSize.XY
+        Caption_CanvasGroup.Size = UDim2.fromOffset(32, 53)
+      else
+        local AbsoluteSize_3 = Caption_CanvasGroup.AbsoluteSize
+        Caption_CanvasGroup.AutomaticSize = Enum.AutomaticSize.Y
+        Caption_CanvasGroup.Size = UDim2.fromOffset(AbsoluteSize_3.X, AbsoluteSize_3.Y)
+      end
+
+      local v18 = nil
+
+      local function updateCaret()
+        local v19 = ClickRegion.AbsolutePosition.X - Caption_CanvasGroup.AbsolutePosition.X + ClickRegion.AbsoluteSize.X / 2 - ImageLabel_1.AbsoluteSize.X / 2
+        local Offset = ImageLabel_1.Position.Y.Offset
+        local udim2_2 = UDim2.fromOffset(v19, Offset)
+
+        if v18 ~= v19 then
+          v18 = v19
+          ImageLabel_1.Position = UDim2.fromOffset(0, Offset)
+          task.wait()
+        end
+
+        ImageLabel_1.Position = udim2_2
+      end
+
+      local v21
+      v3.Position, v21 = udim2, updateCaret
+      v21()
+      v10 = TweenService:Create(v3, v10 and tweenInfo or tweenInfo_1, { Position = udim2_1 })
+      local v23 = RunService.Heartbeat:Connect(updateCaret)
+      v10:Play()
+      v10.Completed:Once(function()
+        v23:Disconnect()
+      end)
+    end
+
+    CaptionJanitor:add(ClickRegion:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+      updatePosition()
+    end))
+    updatePosition(false)
+    CaptionJanitor:add(arg1.toggleKeyAdded:Connect(updateHotkey))
+
+    for key, _ in pairs(arg1.bindedToggleKeys) do
+      updateHotkey(key)
+      break
+    end
+
+    CaptionJanitor:add(arg1.fakeToggleKeyChanged:Connect(updateHotkey))
+    local FakeToggleKey = arg1.fakeToggleKey
+
+    if FakeToggleKey then
+      updateHotkey(FakeToggleKey)
+    end
+
+    local function setCaptionEnabled(arg5)
+      if v5 == arg5 then
+        return
+      end
+
+      local v29 = arg1.joinedFrame
+      arg5 = if not v29 then arg5 else if not string.match(v29.Name, "Dropdown") then arg5 else false
+      v5 = arg5
+      if arg5 then
+        Box_Frame.Visible = true
+        Caption_CanvasGroup.Visible = true
+        v3.Visible = true
+      else
+        Caption_CanvasGroup.Visible = false
+        Box_Frame.Visible = false
+        v3.Visible = false
+      end
+      v29 = if not arg5 then 1 else 0
+      local v30 = arg5 and tweenInfo or tweenInfo_1
+      TweenService:Create(Caption_CanvasGroup, v30, { GroupTransparency = v29 }):Play()
+
+      if arg5 then
+        v3:SetAttribute("ForceUpdate", true)
+      end
+
+      updatePosition()
+      local KeyboardEnabled_3 = UserInputService.KeyboardEnabled
+      v30 = Caption_CanvasGroup:GetAttribute("CaptionText") or ""
+      v29 = if v30 ~= "_hotkey_" then false else true
+
+      if not KeyboardEnabled_3 and v29 then
+        arg1:setCaption()
+        return
+      end
+
+      Header.Text = v30
+      Header.Visible = not v29
+
+      if not KeyboardEnabled_3 then
+        Frame_1.Visible = false
+      end
+    end
+
+    local IconModule_m = require(arg1.iconModule)
+    CaptionJanitor:add(arg1.stateChanged:Connect(function(arg6)
+      if arg6 == "Viewing" then
+        local v31 = IconModule_m.captionLastClosedClock
+        v31 = if not ((v31 and os.clock() - v31 or 999) < 0.3) then 0.5 else 0
+        task.delay(v31, function()
+          if arg1.activeState == "Viewing" then
+            setCaptionEnabled(true)
+          end
+        end)
+        return
+      end
+
+      IconModule_m.captionLastClosedClock = os.clock()
+      setCaptionEnabled(false)
+    end))
+
+    return Caption_CanvasGroup
+  end
+end)
+
+define("Elements.Dropdown", function(script, require)
+  return function(arg1)
+    local Dropdown_Frame = Instance.new("Frame")
+    Dropdown_Frame.Name = "Dropdown"
+    Dropdown_Frame.AutomaticSize = Enum.AutomaticSize.XY
+    Dropdown_Frame.BackgroundTransparency = 1
+    Dropdown_Frame.BorderSizePixel = 0
+    Dropdown_Frame.AnchorPoint = Vector2.new(0.5, 0)
+    Dropdown_Frame.Position = UDim2.new(0.5, 0, 1, 10)
+    Dropdown_Frame.ZIndex = -2
+    Dropdown_Frame.ClipsDescendants = true
+    Dropdown_Frame.Parent = arg1.widget
+    local GuiService = game:GetService("GuiService")
+    arg1:setBehaviour("Dropdown", "BackgroundTransparency", function(arg2)
+      if arg2 == 1 then
+        return arg2
+      end
+      return arg2 * GuiService.PreferredTransparency
+    end)
+    arg1.janitor:add(GuiService:GetPropertyChangedSignal("PreferredTransparency"):Connect(function()
+      arg1:refreshAppearance(Dropdown_Frame, "BackgroundTransparency")
+    end))
+    local DropdownCorner_UICorner = Instance.new("UICorner")
+    DropdownCorner_UICorner.Name = "DropdownCorner"
+    DropdownCorner_UICorner.CornerRadius = UDim.new(0, 10)
+    DropdownCorner_UICorner.Parent = Dropdown_Frame
+    local DropdownScroller_ScrollingFrame = Instance.new("ScrollingFrame")
+    DropdownScroller_ScrollingFrame.Name = "DropdownScroller"
+    DropdownScroller_ScrollingFrame.AutomaticSize = Enum.AutomaticSize.X
+    DropdownScroller_ScrollingFrame.BackgroundTransparency = 1
+    DropdownScroller_ScrollingFrame.BorderSizePixel = 0
+    DropdownScroller_ScrollingFrame.AnchorPoint = Vector2.new(0, 0)
+    DropdownScroller_ScrollingFrame.Position = UDim2.new(0, 0, 0, 0)
+    DropdownScroller_ScrollingFrame.ZIndex = -1
+    DropdownScroller_ScrollingFrame.ClipsDescendants = true
+    DropdownScroller_ScrollingFrame.Visible = true
+    DropdownScroller_ScrollingFrame.VerticalScrollBarInset = Enum.ScrollBarInset.None
+    DropdownScroller_ScrollingFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Right
+    DropdownScroller_ScrollingFrame.Active = false
+    DropdownScroller_ScrollingFrame.ScrollingEnabled = true
+    DropdownScroller_ScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    DropdownScroller_ScrollingFrame.ScrollBarThickness = 5
+    DropdownScroller_ScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
+    DropdownScroller_ScrollingFrame.ScrollBarImageTransparency = 0.8
+    DropdownScroller_ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    DropdownScroller_ScrollingFrame.Selectable = false
+    DropdownScroller_ScrollingFrame.Active = true
+    DropdownScroller_ScrollingFrame.Parent = Dropdown_Frame
+    local DropdownPadding_UIPadding = Instance.new("UIPadding")
+    DropdownPadding_UIPadding.Name = "DropdownPadding"
+    DropdownPadding_UIPadding.PaddingTop = UDim.new(0, 0)
+    DropdownPadding_UIPadding.PaddingBottom = UDim.new(0, 0)
+    DropdownPadding_UIPadding.Parent = DropdownScroller_ScrollingFrame
+    local DropdownList_UIListLayout = Instance.new("UIListLayout")
+    DropdownList_UIListLayout.Name = "DropdownList"
+    DropdownList_UIListLayout.FillDirection = Enum.FillDirection.Vertical
+    DropdownList_UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    DropdownList_UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    DropdownList_UIListLayout.HorizontalFlex = Enum.UIFlexAlignment.SpaceEvenly
+    DropdownList_UIListLayout.Parent = DropdownScroller_ScrollingFrame
+    local DropdownJanitor = arg1.dropdownJanitor
+    local IconModule_m = require(arg1.iconModule)
+    arg1.dropdownChildAdded:Connect(function(arg3)
+      local _, v2 = arg3:modifyTheme({
+        { "Widget", "BorderSize", 0 },
+        { "IconCorners", "CornerRadius", UDim.new(0, 10) },
+        { "Widget", "MinimumWidth", 190 },
+        { "Widget", "MinimumHeight", 58 },
+        { "IconLabel", "TextSize", 20 },
+        { "IconOverlay", "Size", UDim2.new(1, 0, 1, 0) },
+        { "PaddingLeft", "Size", UDim2.fromOffset(25, 0) },
+        { "Notice", "Position", UDim2.new(1, -24, 0, 5) },
+        { "ContentsList", "HorizontalAlignment", Enum.HorizontalAlignment.Left },
+        { "Selection", "Size", UDim2.new(1, -0, 1, -0) },
+        { "Selection", "Position", UDim2.new(0, 0, 0, 0) }
+      })
+      task.defer(function()
+        arg3.joinJanitor:add(function()
+          arg3:removeModification(v2)
+        end)
+      end)
+    end)
+    arg1.dropdownSet:Connect(function(arg4)
+      for _, val in pairs(arg1.dropdownIcons) do
+        IconModule_m.getIconByUID(val):destroy()
+      end
+
+      if type(arg4) == "table" then
+        for _, val_1 in pairs(arg4) do
+          val_1:joinDropdown(arg1)
+        end
+      end
+    end)
+    local Utility_m = require(script.Parent.Parent.Utility)
+
+    local function updateVisibility()
+      Utility_m.setVisible(Dropdown_Frame, arg1.isSelected, "InternalDropdown")
+    end
+
+    DropdownJanitor:add(arg1.toggled:Connect(updateVisibility))
+    Utility_m.setVisible(Dropdown_Frame, arg1.isSelected, "InternalDropdown")
+    local v3 = 0
+    local v4 = false
+
+    local function updateMaxIcons()
+      v3 += 1
+
+      if v4 then
+        return
+      end
+
+      local v5 = v3
+      v4 = true
+      task.defer(function()
+        v4 = false
+        if v3 ~= v5 then
+          updateMaxIcons()
+        end
+      end)
+      local MaxIcons = Dropdown_Frame:GetAttribute("MaxIcons")
+
+      if not MaxIcons then
+        return
+      end
+
+      local t_12 = {}
+
+      for _, val_2 in pairs(DropdownScroller_ScrollingFrame:GetChildren()) do
+        if val_2:IsA("GuiObject") then
+          table.insert(t_12, { val_2, val_2.AbsolutePosition.Y })
+        end
+      end
+
+      table.sort(t_12, function(arg5, arg6)
+        return arg5[2] < arg6[2]
+      end)
+      local v8 = 0
+      local v9 = false
+      local v10 = math.ceil(MaxIcons)
+
+      for index = 1, v10 do
+        local v11 = t_12[index]
+
+        if not v11 then
+          break
+        end
+
+        local v12 = v11[1]
+        local v13 = v12.AbsoluteSize.Y
+        local v14 = if index ~= v10 then false else v10 ~= MaxIcons
+
+        if v14 then
+          v13 *= MaxIcons - v10 + 1
+        end
+
+        v8 += v13
+
+        if not v14 then
+          v14 = v12:GetAttribute("WidgetUID")
+          v12 = v14
+
+          if v12 then
+            v12 = IconModule_m.getIconByUID(v14)
+          end
+
+          if v12 then
+            v14 = nil
+
+            if not v9 then
+              v9 = true
+              v14 = arg1:getInstance("ClickRegion")
+            end
+
+            v12:getInstance("ClickRegion").NextSelectionUp = v14
+          end
+        end
+      end
+
+      DropdownScroller_ScrollingFrame.Size = UDim2.fromOffset(
+        0,
+        v8 + DropdownPadding_UIPadding.PaddingTop.Offset + DropdownPadding_UIPadding.PaddingBottom.Offset
+      )
+    end
+
+    DropdownJanitor:add(
+      DropdownScroller_ScrollingFrame:GetPropertyChangedSignal("AbsoluteCanvasSize"):Connect(updateMaxIcons)
+    )
+    DropdownJanitor:add(DropdownScroller_ScrollingFrame.ChildAdded:Connect(updateMaxIcons))
+    DropdownJanitor:add(DropdownScroller_ScrollingFrame.ChildRemoved:Connect(updateMaxIcons))
+    DropdownJanitor:add(Dropdown_Frame:GetAttributeChangedSignal("MaxIcons"):Connect(updateMaxIcons))
+    DropdownJanitor:add(arg1.childThemeModified:Connect(updateMaxIcons))
+    updateMaxIcons()
+
+    return Dropdown_Frame
+  end
+end)
+
+define("Elements.Indicator", function(script, require)
+  return function(arg1, _)
+    local Widget = arg1.widget
+    local Contents = arg1:getInstance("Contents")
+    local Indicator_Frame = Instance.new("Frame")
+    Indicator_Frame.Name = "Indicator"
+    Indicator_Frame.LayoutOrder = 9999999
+    Indicator_Frame.ZIndex = 6
+    Indicator_Frame.Size = UDim2.new(0, 42, 0, 42)
+    Indicator_Frame.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    Indicator_Frame.BackgroundTransparency = 1
+    Indicator_Frame.Position = UDim2.new(1, 0, 0.5, 0)
+    Indicator_Frame.BorderSizePixel = 0
+    Indicator_Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    Indicator_Frame.Parent = Contents
+    local Frame_1 = Instance.new("Frame")
+    Frame_1.Name = "IndicatorButton"
+    Frame_1.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    Frame_1.AnchorPoint = Vector2.new(0.5, 0.5)
+    Frame_1.BorderSizePixel = 0
+    Frame_1.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    Frame_1.Parent = Indicator_Frame
+    local GuiService = game:GetService("GuiService")
+    local GamepadService = game:GetService("GamepadService")
+    local ClickRegion = arg1:getInstance("ClickRegion")
+
+    local function selectionChanged()
+      if GuiService.SelectedObject == ClickRegion then
+        Frame_1.BackgroundTransparency = 1
+        Frame_1.Position = UDim2.new(0.5, -2, 0.5, 0)
+        Frame_1.Size = UDim2.fromScale(1.2, 1.2)
+        return
+      end
+
+      Frame_1.BackgroundTransparency = 0.75
+      Frame_1.Position = UDim2.new(0.5, 2, 0.5, 0)
+      Frame_1.Size = UDim2.fromScale(1, 1)
+    end
+
+    arg1.janitor:add(GuiService:GetPropertyChangedSignal("SelectedObject"):Connect(selectionChanged))
+    selectionChanged()
+    local ImageLabel = Instance.new("ImageLabel")
+    ImageLabel.LayoutOrder = 2
+    ImageLabel.ZIndex = 15
+    ImageLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+    ImageLabel.Size = UDim2.new(0.5, 0, 0.5, 0)
+    ImageLabel.BackgroundTransparency = 1
+    ImageLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+    ImageLabel.Image = "rbxasset://textures/ui/Controls/XboxController/DPadUp@2x.png"
+    ImageLabel.Parent = Frame_1
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(1, 0)
+    UICorner.Parent = Frame_1
+    local UserInputService = game:GetService("UserInputService")
+
+    local function setIndicatorVisible(arg3)
+      if arg3 == nil then
+        arg3 = Indicator_Frame.Visible
+      end
+
+      if GamepadService.GamepadCursorEnabled then
+        arg3 = false
+      end
+
+      if arg3 then
+        arg1:modifyTheme({ "PaddingRight", "Size", UDim2.new(0, 0, 1, 0) }, "IndicatorPadding")
+      elseif Indicator_Frame.Visible then
+        arg1:removeModification("IndicatorPadding")
+      end
+
+      arg1:modifyTheme({ "Indicator", "Visible", arg3 })
+      arg1.updateSize:Fire()
+    end
+
+    arg1.janitor:add(
+      GamepadService:GetPropertyChangedSignal("GamepadCursorEnabled"):Connect(setIndicatorVisible)
+    )
+    arg1.indicatorSet:Connect(function(arg4)
+      local v6 = false
+
+      if arg4 then
+        ImageLabel.Image = UserInputService:GetImageForKeyCode(arg4)
+        v6 = true
+      end
+
+      setIndicatorVisible(v6)
+    end)
+
+    local function updateSize()
+      local v8 = Widget.AbsoluteSize.Y * 0.96
+      Indicator_Frame.Size = UDim2.new(0, v8, 0, v8)
+    end
+
+    Widget:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateSize)
+    local v10 = Widget.AbsoluteSize.Y * 0.96
+    Indicator_Frame.Size = UDim2.new(0, v10, 0, v10)
+
+    return Indicator_Frame
+  end
+end)
+
+define("Elements.Menu", function(script, require)
+  return function(arg1)
+    local Menu_ScrollingFrame = Instance.new("ScrollingFrame")
+    Menu_ScrollingFrame.Name = "Menu"
+    Menu_ScrollingFrame.BackgroundTransparency = 1
+    Menu_ScrollingFrame.Visible = true
+    Menu_ScrollingFrame.ZIndex = 1
+    Menu_ScrollingFrame.Size = UDim2.fromScale(1, 1)
+    Menu_ScrollingFrame.ClipsDescendants = true
+    Menu_ScrollingFrame.TopImage = ""
+    Menu_ScrollingFrame.BottomImage = ""
+    Menu_ScrollingFrame.HorizontalScrollBarInset = Enum.ScrollBarInset.Always
+    Menu_ScrollingFrame.CanvasSize = UDim2.new(0, 0, 1, -1)
+    Menu_ScrollingFrame.ScrollingEnabled = true
+    Menu_ScrollingFrame.ScrollingDirection = Enum.ScrollingDirection.X
+    Menu_ScrollingFrame.ZIndex = 20
+    Menu_ScrollingFrame.ScrollBarThickness = 3
+    Menu_ScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
+    Menu_ScrollingFrame.ScrollBarImageTransparency = 0.8
+    Menu_ScrollingFrame.BorderSizePixel = 0
+    Menu_ScrollingFrame.Selectable = false
+    local IconModule_m = require(arg1.iconModule)
+    local v1 = IconModule_m.container.TopbarStandard:FindFirstChild("UIListLayout", true):Clone()
+    v1.Name = "MenuUIListLayout"
+    v1.VerticalAlignment = Enum.VerticalAlignment.Center
+    v1.Parent = Menu_ScrollingFrame
+    local MenuGap_Frame = Instance.new("Frame")
+    MenuGap_Frame.Name = "MenuGap"
+    MenuGap_Frame.BackgroundTransparency = 1
+    MenuGap_Frame.Visible = false
+    MenuGap_Frame.AnchorPoint = Vector2.new(0, 0.5)
+    MenuGap_Frame.ZIndex = 5
+    MenuGap_Frame.Parent = Menu_ScrollingFrame
+    local v2 = false
+    local Themes_m = require(script.Parent.Parent.Features.Themes)
+
+    local function totalChildrenChanged()
+      local v5
+      local MenuJanitor = arg1.menuJanitor
+
+      if v2 then
+        if #arg1.menuIcons <= 0 then
+          MenuJanitor:clean()
+          v2 = false
+        end
+        return
+      end
+
+      v2 = true
+      MenuJanitor:add(arg1.toggled:Connect(function()
+        if #arg1.menuIcons > 0 then
+          arg1.updateSize:Fire()
+        end
+      end))
+      local t = { { "Menu", "Active", true } }
+      local _
+      _, v5 = arg1:modifyTheme(t)
+      task.defer(function()
+        MenuJanitor:add(function()
+          arg1:removeModification(v5)
+        end)
+      end)
+      local v6 = Menu_ScrollingFrame.AbsoluteCanvasSize.X
+
+      local function rightAlignCanvas()
+        if arg1.alignment == "Right" then
+          local X = Menu_ScrollingFrame.AbsoluteCanvasSize.X
+          local v7 = v6 - X
+          v6 = X
+          Menu_ScrollingFrame.CanvasPosition = Vector2.new(
+            Menu_ScrollingFrame.CanvasPosition.X - v7,
+            0
+          )
+        end
+      end
+
+      MenuJanitor:add(arg1.selected:Connect(rightAlignCanvas))
+      MenuJanitor:add(
+        Menu_ScrollingFrame:GetPropertyChangedSignal("AbsoluteCanvasSize"):Connect(rightAlignCanvas)
+      )
+      local v9 = arg1:getStateGroup()
+
+      if Themes_m.getThemeValue(v9, "IconImage", "Image", "Deselected") == Themes_m.getThemeValue(
+        v9,
+        "IconImage",
+        "Image",
+        "Selected"
+      ) then
+        local font = Font.new(
+          "rbxasset://fonts/families/FredokaOne.json",
+          Enum.FontWeight.Light,
+          Enum.FontStyle.Normal
+        )
+        arg1:removeModificationWith("IconLabel", "Text", "Viewing")
+        arg1:removeModificationWith("IconLabel", "Image", "Viewing")
+        arg1:modifyTheme({
+          { "IconLabel", "FontFace", font, "Selected" },
+          { "IconLabel", "Text", "X", "Selected" },
+          { "IconLabel", "TextSize", 20, "Selected" },
+          { "IconLabel", "TextStrokeTransparency", 0.8, "Selected" },
+          { "IconImage", "Image", "", "Selected" }
+        })
+      end
+
+      local MenuGap = arg1:getInstance("MenuGap")
+      MenuJanitor:add(arg1.alignmentChanged:Connect(function()
+        local v10 = -99999
+        local v11 = -99998
+
+        if arg1.alignment == "Right" then
+          v10 = 99999
+          v11 = 99998
+        end
+
+        arg1:modifyTheme({ "IconSpot", "LayoutOrder", v10 })
+        MenuGap.LayoutOrder = v11
+      end))
+      local v12 = -99999
+      local v13 = -99998
+
+      if arg1.alignment == "Right" then
+        v12 = 99999
+        v13 = 99998
+      end
+
+      arg1:modifyTheme({ "IconSpot", "LayoutOrder", v12 })
+      MenuGap.LayoutOrder = v13
+      Menu_ScrollingFrame:GetAttributeChangedSignal("MenuCanvasWidth"):Connect(function()
+        local MenuCanvasWidth_1 = Menu_ScrollingFrame:GetAttribute("MenuCanvasWidth")
+        local Y = Menu_ScrollingFrame.CanvasSize.Y
+        Menu_ScrollingFrame.CanvasSize = UDim2.new(0, MenuCanvasWidth_1, Y.Scale, Y.Offset)
+      end)
+      MenuJanitor:add(arg1.updateMenu:Connect(function()
+        local MaxIcons = Menu_ScrollingFrame:GetAttribute("MaxIcons")
+
+        if not MaxIcons then
+          return
+        end
+
+        local t_1 = {}
+
+        for _, val in pairs(Menu_ScrollingFrame:GetChildren()) do
+          if val:GetAttribute("WidgetUID") and val.Visible then
+            table.insert(t_1, { val, val.AbsolutePosition.X })
+          end
+        end
+
+        table.sort(t_1, function(arg2, arg3)
+          return arg2[2] < arg3[2]
+        end)
+        local v17 = 0
+
+        for index = 1, MaxIcons do
+          local v18 = t_1[index]
+
+          if not v18 then
+            break
+          end
+
+          v17 += v18[1].AbsoluteSize.X + v1.Padding.Offset
+        end
+
+        Menu_ScrollingFrame:SetAttribute("MenuWidth", v17)
+      end))
+
+      local function startMenuUpdate()
+        task.delay(0.1, function()
+          arg1.startMenuUpdate:Fire()
+        end)
+      end
+
+      MenuJanitor:add(Menu_ScrollingFrame.ChildAdded:Connect(startMenuUpdate))
+      MenuJanitor:add(Menu_ScrollingFrame.ChildRemoved:Connect(startMenuUpdate))
+      MenuJanitor:add(Menu_ScrollingFrame:GetAttributeChangedSignal("MaxIcons"):Connect(startMenuUpdate))
+      MenuJanitor:add(Menu_ScrollingFrame:GetAttributeChangedSignal("MaxWidth"):Connect(startMenuUpdate))
+      task.delay(0.1, function()
+        arg1.startMenuUpdate:Fire()
+      end)
+    end
+
+    arg1.menuChildAdded:Connect(totalChildrenChanged)
+    arg1.menuSet:Connect(function(arg4)
+      for _, val_1 in pairs(arg1.menuIcons) do
+        IconModule_m.getIconByUID(val_1):destroy()
+      end
+
+      if type(arg4) == "table" then
+        for _, val_2 in pairs(arg4) do
+          val_2:joinMenu(arg1)
+        end
+      end
+    end)
+
+    return Menu_ScrollingFrame
+  end
+end)
+
+define("Elements.Notice", function(script, require)
+  return function(arg1, arg2)
+    local Notice_Frame = Instance.new("Frame")
+    Notice_Frame.Name = "Notice"
+    Notice_Frame.ZIndex = 25
+    Notice_Frame.AutomaticSize = Enum.AutomaticSize.X
+    Notice_Frame.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    Notice_Frame.BorderSizePixel = 0
+    Notice_Frame.BackgroundTransparency = 0.1
+    Notice_Frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Notice_Frame.Visible = false
+    Notice_Frame.Parent = arg1.widget
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(1, 0)
+    UICorner.Parent = Notice_Frame
+    Instance.new("UIStroke").Parent = Notice_Frame
+    local NoticeLabel_TextLabel = Instance.new("TextLabel")
+    NoticeLabel_TextLabel.Name = "NoticeLabel"
+    NoticeLabel_TextLabel.ZIndex = 26
+    NoticeLabel_TextLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+    NoticeLabel_TextLabel.AutomaticSize = Enum.AutomaticSize.X
+    NoticeLabel_TextLabel.Size = UDim2.new(1, 0, 1, 0)
+    NoticeLabel_TextLabel.BackgroundTransparency = 1
+    NoticeLabel_TextLabel.Position = UDim2.new(0.5, 0, 0.515, 0)
+    NoticeLabel_TextLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    NoticeLabel_TextLabel.FontSize = Enum.FontSize.Size14
+    NoticeLabel_TextLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+    NoticeLabel_TextLabel.Text = "1"
+    NoticeLabel_TextLabel.TextWrapped = true
+    NoticeLabel_TextLabel.TextWrap = true
+    NoticeLabel_TextLabel.Font = Enum.Font.Arial
+    NoticeLabel_TextLabel.Parent = Notice_Frame
+    local Parent = script.Parent.Parent
+    local Packages = Parent.Packages
+    local Janitor_m = require(Packages.Janitor)
+    local GoodSignal_m = require(Packages.GoodSignal)
+    local Utility_m = require(Parent.Utility)
+    arg1.noticeChanged:Connect(function(arg3)
+      if not arg3 then
+        return
+      end
+
+      local v1 = arg3 > 99 and true
+      local v2 = if not v1 then arg3 else "99+"
+      NoticeLabel_TextLabel.Text = v2
+
+      if v1 then
+        NoticeLabel_TextLabel.TextSize = 11
+      end
+
+      v2 = if arg3 < 1 then false else true
+      v1 = arg2.getIconByUID(arg1.parentIconUID)
+      local v3 = #arg1.dropdownIcons > 0 or #arg1.menuIcons > 0
+      v2 = if not arg1.isSelected then if not v1 then v2 else if v1.isSelected then v2 else false else if not v3 then if not v1 then v2 else if v1.isSelected then v2 else false else false
+      Utility_m.setVisible(Notice_Frame, v2, "NoticeHandler")
+    end)
+    arg1.noticeStarted:Connect(function(arg4, arg5)
+      if not arg4 then
+        arg4 = arg1.deselected
+      end
+
+      local v4 = arg2.getIconByUID(arg1.parentIconUID)
+
+      if v4 then
+        v4:notify(arg4)
+      end
+
+      local v5 = arg1.janitor:add(Janitor_m.new())
+      local v6 = v5:add(GoodSignal_m.new())
+      v5:add(arg1.endNotices:Connect(function()
+        v6:Fire()
+      end))
+      v5:add(arg4:Connect(function()
+        v6:Fire()
+      end))
+      arg5 = arg5 or Utility_m.generateUID()
+      arg1.notices[arg5] = { completeSignal = v6, clearNoticeEvent = arg4 }
+
+      arg1.notified:Fire(arg5)
+      local v8 = arg1
+      v8.totalNotices += 1
+      arg1.noticeChanged:Fire(arg1.totalNotices)
+      v6:Once(function()
+        v5:destroy()
+        local v9 = arg1
+        v9.totalNotices -= 1
+        arg1.notices[arg5] = nil
+        arg1.noticeChanged:Fire(arg1.totalNotices)
+      end)
+    end)
+    Notice_Frame:SetAttribute("ClipToJoinedParent", true)
+    arg1:clipOutside(Notice_Frame)
+
+    return Notice_Frame
+  end
+end)
+
+define("Elements.Widget", function(script, require)
+  return function(arg1, arg2)
+    local Widget_Frame = Instance.new("Frame")
+    Widget_Frame:SetAttribute("WidgetUID", arg1.UID)
+    Widget_Frame.Name = "Widget"
+    Widget_Frame.BackgroundTransparency = 1
+    Widget_Frame.Visible = true
+    Widget_Frame.ZIndex = 20
+    Widget_Frame.Active = false
+    Widget_Frame.ClipsDescendants = true
+    local Frame_1 = Instance.new("Frame")
+    Frame_1.Name = "IconButton"
+    Frame_1.Visible = true
+    Frame_1.ZIndex = 2
+    Frame_1.BorderSizePixel = 0
+    Frame_1.Parent = Widget_Frame
+    Frame_1.ClipsDescendants = true
+    Frame_1.Active = false
+    arg1.deselected:Connect(function()
+      Frame_1.ClipsDescendants = true
+      task.delay(0.2, function()
+        if arg1.isSelected then
+          Frame_1.ClipsDescendants = false
+        end
+      end)
+    end)
+    local GuiService = game:GetService("GuiService")
+    arg1:setBehaviour("IconButton", "BackgroundTransparency", function(arg3)
+      if arg3 == 1 then
+        return arg3
+      end
+      return arg3 * GuiService.PreferredTransparency
+    end)
+    arg1.janitor:add(GuiService:GetPropertyChangedSignal("PreferredTransparency"):Connect(function()
+      arg1:refreshAppearance(Frame_1, "BackgroundTransparency")
+    end))
+    local UICorner = Instance.new("UICorner")
+    UICorner:SetAttribute("Collective", "IconCorners")
+    UICorner.Name = "UICorner"
+    UICorner.Parent = Frame_1
+    local v1 = require(script.Parent.Menu)(arg1)
+    local MenuUIListLayout = v1.MenuUIListLayout
+    local MenuGap = v1.MenuGap
+    v1.Parent = Frame_1
+    local Frame_2 = Instance.new("Frame")
+    Frame_2.Name = "IconSpot"
+    Frame_2.BackgroundColor3 = Color3.fromRGB(225, 225, 225)
+    Frame_2.BackgroundTransparency = 0.9
+    Frame_2.Visible = true
+    Frame_2.AnchorPoint = Vector2.new(0, 0.5)
+    Frame_2.ZIndex = 5
+    Frame_2.Parent = v1
+    UICorner:Clone().Parent = Frame_2
+    local v2 = Frame_2:Clone()
+    v2.UICorner.Name = "OverlayUICorner"
+    v2.Name = "IconOverlay"
+    v2.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    v2.ZIndex = Frame_2.ZIndex + 1
+    v2.Size = UDim2.new(1, 0, 1, 0)
+    v2.Position = UDim2.new(0, 0, 0, 0)
+    v2.AnchorPoint = Vector2.new(0, 0)
+    v2.Visible = false
+    v2.Parent = Frame_2
+    local ClickRegion_TextButton = Instance.new("TextButton")
+    ClickRegion_TextButton:SetAttribute("CorrespondingIconUID", arg1.UID)
+    ClickRegion_TextButton.Name = "ClickRegion"
+    ClickRegion_TextButton.BackgroundTransparency = 1
+    ClickRegion_TextButton.Visible = true
+    ClickRegion_TextButton.Text = ""
+    ClickRegion_TextButton.ZIndex = 20
+    ClickRegion_TextButton.Selectable = true
+    ClickRegion_TextButton.SelectionGroup = true
+    ClickRegion_TextButton.Parent = Frame_2
+    require(script.Parent.Parent.Features.Gamepad).registerButton(ClickRegion_TextButton)
+    UICorner:Clone().Parent = ClickRegion_TextButton
+    local Frame_3 = Instance.new("Frame")
+    Frame_3.Name = "Contents"
+    Frame_3.BackgroundTransparency = 1
+    Frame_3.Size = UDim2.fromScale(1, 1)
+    Frame_3.Parent = Frame_2
+    local ContentsList_UIListLayout = Instance.new("UIListLayout")
+    ContentsList_UIListLayout.Name = "ContentsList"
+    ContentsList_UIListLayout.FillDirection = Enum.FillDirection.Horizontal
+    ContentsList_UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    ContentsList_UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    ContentsList_UIListLayout.VerticalFlex = Enum.UIFlexAlignment.SpaceEvenly
+    ContentsList_UIListLayout.Padding = UDim.new(0, 3)
+    ContentsList_UIListLayout.Parent = Frame_3
+    local Frame_4 = Instance.new("Frame")
+    Frame_4.Name = "PaddingLeft"
+    Frame_4.LayoutOrder = 1
+    Frame_4.ZIndex = 5
+    Frame_4.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    Frame_4.BackgroundTransparency = 1
+    Frame_4.BorderSizePixel = 0
+    Frame_4.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Frame_4.Parent = Frame_3
+    local Frame_5 = Instance.new("Frame")
+    Frame_5.Name = "PaddingCenter"
+    Frame_5.LayoutOrder = 3
+    Frame_5.ZIndex = 5
+    Frame_5.Size = UDim2.new(0, 0, 1, 0)
+    Frame_5.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    Frame_5.BackgroundTransparency = 1
+    Frame_5.BorderSizePixel = 0
+    Frame_5.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Frame_5.Parent = Frame_3
+    local Frame_6 = Instance.new("Frame")
+    Frame_6.Name = "PaddingRight"
+    Frame_6.LayoutOrder = 5
+    Frame_6.ZIndex = 5
+    Frame_6.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    Frame_6.BackgroundTransparency = 1
+    Frame_6.BorderSizePixel = 0
+    Frame_6.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Frame_6.Parent = Frame_3
+    local Frame_7 = Instance.new("Frame")
+    Frame_7.Name = "IconLabelContainer"
+    Frame_7.LayoutOrder = 4
+    Frame_7.ZIndex = 3
+    Frame_7.AnchorPoint = Vector2.new(0, 0.5)
+    Frame_7.Size = UDim2.new(0, 0, 0.5, 0)
+    Frame_7.BackgroundTransparency = 1
+    Frame_7.Position = UDim2.new(0.5, 0, 0.5, 0)
+    Frame_7.Parent = Frame_3
+    local IconLabel_TextLabel = Instance.new("TextLabel")
+    local v3 = workspace.CurrentCamera.ViewportSize.X + 200
+    IconLabel_TextLabel.Name = "IconLabel"
+    IconLabel_TextLabel.LayoutOrder = 4
+    IconLabel_TextLabel.ZIndex = 15
+    IconLabel_TextLabel.AnchorPoint = Vector2.new(0, 0)
+    IconLabel_TextLabel.Size = UDim2.new(0, v3, 1, 0)
+    IconLabel_TextLabel.ClipsDescendants = false
+    IconLabel_TextLabel.BackgroundTransparency = 1
+    IconLabel_TextLabel.Position = UDim2.fromScale(0, 0)
+    IconLabel_TextLabel.RichText = true
+    IconLabel_TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    IconLabel_TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    IconLabel_TextLabel.Text = ""
+    IconLabel_TextLabel.TextWrapped = true
+    IconLabel_TextLabel.TextWrap = true
+    IconLabel_TextLabel.TextScaled = false
+    IconLabel_TextLabel.Active = false
+    IconLabel_TextLabel.AutoLocalize = true
+    IconLabel_TextLabel.Parent = Frame_7
+    local IconImage_ImageLabel = Instance.new("ImageLabel")
+    IconImage_ImageLabel.Name = "IconImage"
+    IconImage_ImageLabel.LayoutOrder = 2
+    IconImage_ImageLabel.ZIndex = 15
+    IconImage_ImageLabel.AnchorPoint = Vector2.new(0, 0.5)
+    IconImage_ImageLabel.Size = UDim2.new(0, 0, 0.5, 0)
+    IconImage_ImageLabel.BackgroundTransparency = 1
+    IconImage_ImageLabel.Position = UDim2.new(0, 11, 0.5, 0)
+    IconImage_ImageLabel.ScaleType = Enum.ScaleType.Stretch
+    IconImage_ImageLabel.Active = false
+    IconImage_ImageLabel.Parent = Frame_3
+    local v4 = UICorner:Clone()
+    v4:SetAttribute("Collective", nil)
+    v4.CornerRadius = UDim.new(0, 0)
+    v4.Name = "IconImageCorner"
+    v4.Parent = IconImage_ImageLabel
+    local TweenService = game:GetService("TweenService")
+    local v5 = 0
+
+    local function handleLabelAndImageChangesUnstaggered(_)
+      task.defer(function()
+        local v6 = arg1.indicator
+        local v7 = v6 and v6.Visible
+        v6 = v7 or IconLabel_TextLabel.Text ~= ""
+        local v8 = if IconImage_ImageLabel.Image == "" then false else IconImage_ImageLabel.Image ~= nil
+        local udim2 = UDim2.fromScale(1, 1)
+
+        if v8 and not v6 then
+          Frame_7.Visible = false
+          IconImage_ImageLabel.Visible = true
+          Frame_4.Visible = false
+          Frame_5.Visible = false
+          Frame_6.Visible = false
+        elseif not v8 and v6 then
+          Frame_7.Visible = true
+          IconImage_ImageLabel.Visible = false
+          Frame_4.Visible = true
+          Frame_5.Visible = false
+          Frame_6.Visible = true
+        elseif v8 and v6 then
+          Frame_7.Visible = true
+          IconImage_ImageLabel.Visible = true
+          Frame_4.Visible = true
+          Frame_5.Visible = not v7
+          Frame_6.Visible = not v7
+        end
+
+        Frame_1.Size = udim2
+
+        local Offset = ContentsList_UIListLayout.Padding.Offset
+        v8 = Offset
+        Frame_7.Size = UDim2.new(
+          0,
+          IconLabel_TextLabel.TextBounds.X,
+          IconLabel_TextLabel.Size.Y.Scale,
+          0
+        )
+
+        for _, child in pairs(Frame_3:GetChildren()) do
+          if child:IsA("GuiObject") and child.Visible == true then
+            v7 = child:GetAttribute("TargetWidth") or child.AbsoluteSize.X
+            v8 += v7 + Offset
+          end
+        end
+
+        local MinimumWidth = Widget_Frame:GetAttribute("MinimumWidth")
+        v6 = Widget_Frame:GetAttribute("MinimumHeight")
+        local BorderSize = Widget_Frame:GetAttribute("BorderSize")
+        local v12 = math.clamp(v8, MinimumWidth, v3)
+        local v13 = 0
+        v8 = #arg1.menuIcons > 0 and true
+
+        if v8 then
+          v8 = arg1.isSelected
+        end
+
+        if v8 then
+          for _, val in pairs(v1:GetChildren()) do
+            if val ~= Frame_2 and val:IsA("GuiObject") and val.Visible then
+              local v16 = val:GetAttribute("TargetWidth") or val.AbsoluteSize.X
+              v13 += v16 + MenuUIListLayout.Padding.Offset
+            end
+          end
+
+          if not Frame_2.Visible then
+            local v17 = Frame_2
+            local v18 = v17:GetAttribute("TargetWidth") or v17.AbsoluteSize.X
+            v12 -= v18 + MenuUIListLayout.Padding.Offset * 2 + BorderSize
+          end
+
+          v13 -= BorderSize * 0.5
+          v12 += v13 - BorderSize * 0.75
+        end
+
+        local v19 = MenuGap
+        local v20 = v8 and Frame_2.Visible
+        v19.Visible = v20
+        local DesiredWidth = Widget_Frame:GetAttribute("DesiredWidth")
+
+        if DesiredWidth and v12 < DesiredWidth then
+          v12 = DesiredWidth
+        end
+
+        arg1.updateMenu:Fire()
+        v13 = math.max(v12 - v13, MinimumWidth) - BorderSize * 2
+        local MenuWidth = v1:GetAttribute("MenuWidth")
+        v8 = MenuWidth
+
+        if v8 then
+          v8 = MenuWidth + v13 + MenuUIListLayout.Padding.Offset + 10
+        end
+
+        if v8 then
+          local MaxWidth = v1:GetAttribute("MaxWidth")
+
+          if MaxWidth then
+            v8 = math.max(MaxWidth, MinimumWidth)
+          end
+
+          v1:SetAttribute("MenuCanvasWidth", v12)
+
+          if v8 < v12 then
+            v12 = v8
+          end
+        end
+
+        local EasingStyle_Quint = Enum.EasingStyle.Quint
+        v8 = Enum.EasingDirection.Out
+        local v22 = Frame_2
+        local v23 = v22:GetAttribute("TargetWidth") or v22.AbsoluteSize.X
+        local v24 = math.max(v13, v23, Frame_2.AbsoluteSize.X)
+        local v25 = Widget_Frame
+        local v26 = v25:GetAttribute("TargetWidth") or v25.AbsoluteSize.X
+        local v27 = math.max(v12, v26, Widget_Frame.AbsoluteSize.X)
+        local tweenInfo = TweenInfo.new(v24 / 750, EasingStyle_Quint, v8)
+        local tweenInfo_1 = TweenInfo.new(v27 / 750, EasingStyle_Quint, v8)
+        TweenService:Create(
+          Frame_2,
+          tweenInfo,
+          {
+            Position = UDim2.new(0, BorderSize, 0.5, 0),
+            Size = UDim2.new(0, v13, 1, -BorderSize * 2)
+          }
+        ):Play()
+        TweenService:Create(
+          ClickRegion_TextButton,
+          tweenInfo,
+          { Size = UDim2.new(0, v13, 1, 0) }
+        ):Play()
+        local udim2_1 = UDim2.fromOffset(v12, v6)
+
+        if if Widget_Frame.Size.Y.Offset == v6 then false else true then
+          Widget_Frame.Size = udim2_1
+        end
+
+        Widget_Frame:SetAttribute("TargetWidth", udim2_1.X.Offset)
+        TweenService:Create(Widget_Frame, tweenInfo_1, { Size = udim2_1 }):Play()
+        v5 += 1
+
+        for index = 1, tweenInfo_1.Time * 100 do
+          task.delay(index / 100, function()
+            arg2.iconChanged:Fire(arg1)
+          end)
+        end
+
+        task.delay(tweenInfo_1.Time - 0.2, function()
+          v5 -= 1
+          task.defer(function()
+            if v5 == 0 then
+              arg1.resizingComplete:Fire()
+            end
+          end)
+        end)
+        arg1:updateParent()
+      end)
+    end
+
+    local v33 = require(script.Parent.Parent.Utility).createStagger(
+      0.01,
+      handleLabelAndImageChangesUnstaggered
+    )
+    arg1:setBehaviour("IconLabel", "Text", v33)
+    local v34 = true
+    arg1:setBehaviour("IconLabel", "FontFace", function(arg6)
+      if IconLabel_TextLabel.FontFace == arg6 then
+        return
+      end
+
+      task.spawn(function()
+        v33()
+
+        if v34 then
+          v34 = false
+
+          for _ = 1, 10 do
+            task.wait(1)
+            v33()
+          end
+        end
+      end)
+    end)
+
+    local function updateBorderSize()
+      task.defer(function()
+        local BorderSize_1 = Widget_Frame:GetAttribute("BorderSize")
+        v1.Position = UDim2.new(
+          0,
+          if Frame_2.Visible == false then 0 else if arg1.alignment ~= "Right" then BorderSize_1 else -BorderSize_1 or BorderSize_1,
+          0,
+          0
+        )
+        MenuGap.Size = UDim2.fromOffset(BorderSize_1, 0)
+        MenuUIListLayout.Padding = UDim.new(0, 0)
+        v33()
+      end)
+    end
+
+    arg1:setBehaviour("Widget", "BorderSize", updateBorderSize)
+    arg1:setBehaviour("IconSpot", "Visible", updateBorderSize)
+    arg1.startMenuUpdate:Connect(v33)
+    arg1.updateSize:Connect(v33)
+    arg1:setBehaviour("ContentsList", "HorizontalAlignment", v33)
+    arg1:setBehaviour("Widget", "Visible", v33)
+    arg1:setBehaviour("Widget", "DesiredWidth", v33)
+    arg1:setBehaviour("Widget", "MinimumWidth", v33)
+    arg1:setBehaviour("Widget", "MinimumHeight", v33)
+    arg1:setBehaviour("Indicator", "Visible", v33)
+    arg1:setBehaviour("IconImageRatio", "AspectRatio", v33)
+    arg1:setBehaviour("IconImage", "Image", function(arg7)
+      local v39 = tonumber(arg7) and "http://www.roblox.com/asset/?id=" .. arg7 or (arg7 or "")
+
+      if IconImage_ImageLabel.Image ~= v39 then
+        v33()
+      end
+
+      return v39
+    end)
+    arg1.alignmentChanged:Connect(function(arg8)
+      if arg8 == "Center" then
+        arg8 = "Left"
+      end
+
+      MenuUIListLayout.HorizontalAlignment = Enum.HorizontalAlignment[arg8]
+      updateBorderSize()
+    end)
+    local LocalPlayer = game:GetService("Players").LocalPlayer
+    local LocaleId = LocalPlayer.LocaleId
+    arg1.janitor:add(LocalPlayer:GetPropertyChangedSignal("LocaleId"):Connect(function()
+      task.delay(0.2, function()
+        local LocaleId_2 = LocalPlayer.LocaleId
+
+        if LocaleId_2 ~= LocaleId then
+          LocaleId = LocaleId_2
+          arg1:refresh()
+          task.wait(0.5)
+          arg1:refresh()
+        end
+      end)
+    end))
+    local IconImageScale_NumberValue = Instance.new("NumberValue")
+    IconImageScale_NumberValue.Name = "IconImageScale"
+    IconImageScale_NumberValue.Parent = IconImage_ImageLabel
+    IconImageScale_NumberValue:GetPropertyChangedSignal("Value"):Connect(function()
+      IconImage_ImageLabel.Size = UDim2.new(
+        IconImageScale_NumberValue.Value,
+        0,
+        IconImageScale_NumberValue.Value,
+        0
+      )
+    end)
+    local IconImageRatio_UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
+    IconImageRatio_UIAspectRatioConstraint.Name = "IconImageRatio"
+    IconImageRatio_UIAspectRatioConstraint.AspectType = Enum.AspectType.FitWithinMaxSize
+    IconImageRatio_UIAspectRatioConstraint.DominantAxis = Enum.DominantAxis.Height
+    IconImageRatio_UIAspectRatioConstraint.Parent = IconImage_ImageLabel
+    local IconGradient_UIGradient = Instance.new("UIGradient")
+    IconGradient_UIGradient.Name = "IconGradient"
+    IconGradient_UIGradient.Enabled = true
+    IconGradient_UIGradient.Parent = Frame_1
+    local UIGradient_1 = Instance.new("UIGradient")
+    UIGradient_1.Name = "IconSpotGradient"
+    UIGradient_1.Enabled = true
+    UIGradient_1.Parent = Frame_2
+
+    return Widget_Frame
+  end
+end)
+
+define("", function(script, require)
+  local UserInputService = game:GetService("UserInputService")
+  local ContentProvider = game:GetService("ContentProvider")
+  local StarterGui = game:GetService("StarterGui")
+  local Players = game:GetService("Players")
+  local _ = require(script.Types)
+  local v1 = script
+  local Reference_m = require(v1.Reference)
+  local v2 = Reference_m.getObject()
+  local v3 = v2
+
+  if v3 then
+    v3 = v2.Value
+  end
+
+  if v3 and v3 ~= v1 then
+    return (require(v3))
+  end
+
+  if not v2 then
+    Reference_m.addToReplicatedStorage()
+  end
+
+  v3 = require(v1.Packages.GoodSignal)
+  local Janitor_m = require(v1.Packages.Janitor)
+  local Utility_m = require(v1.Utility)
+  local Themes_m = require(v1.Features.Themes)
+  local Gamepad_m = require(v1.Features.Gamepad)
+  local Overflow_m = require(v1.Features.Overflow)
+  local t = {}
+  t.__index = t
+  local t_1 = {}
+  local Themes = v1.Features.Themes
+  local LocalPlayer = Players.LocalPlayer
+  local v4 = v3.new()
+  local Elements = v1.Elements
+  local v5 = 0
+  local t_2 = {
+    mobile = Enum.PreferredInput.Touch,
+    desktop = Enum.PreferredInput.KeyboardAndMouse,
+    console = Enum.PreferredInput.Gamepad
+  }
+  t.baseDisplayOrderChanged = v3.new()
+  t.baseDisplayOrder = 10
+  t.baseTheme = require(Themes.Default)
+  t.isOldTopbar = false
+  t.iconsDictionary = t_1
+  t.insetHeightChanged = v3.new()
+  t.container = require(Elements.Container)(t)
+  t.topbarEnabled = true
+  t.iconAdded = v3.new()
+  t.iconRemoved = v3.new()
+  t.iconChanged = v3.new()
+
+  function t.getIcons()
+    return t.iconsDictionary
+  end
+
+  function t.getIconByUID(arg1)
+    local v6 = t.iconsDictionary[arg1]
+    if v6 then
+      return v6
+    end
+    return nil
+  end
+
+  function t.getIcon(arg2)
+    local v7 = t.getIconByUID(arg2)
+    if v7 then
+      return v7
+    end
+    for _, val in pairs(t_1) do
+      if val.name == arg2 then
+        return val
+      end
+    end
+    return nil
+  end
+
+  function t.setTopbarEnabled(arg3, arg4)
+    if typeof(arg3) ~= "boolean" then
+      arg3 = t.topbarEnabled
+    end
+    if not arg4 then
+      t.topbarEnabled = arg3
+    end
+    for _, val_1 in pairs(t.container) do
+      val_1.Enabled = arg3
+    end
+  end
+
+  function t.modifyBaseTheme(arg5)
+    for _, val_2 in pairs((Themes_m.getModifications(arg5))) do
+      for _, val_3 in pairs(t.baseTheme) do
+        Themes_m.merge(val_3, val_2)
+      end
+    end
+    for _, val_4 in pairs(t_1) do
+      val_4:setTheme(t.baseTheme)
+    end
+  end
+
+  function t.setDisplayOrder(arg6)
+    t.baseDisplayOrder = arg6
+    t.baseDisplayOrderChanged:Fire(arg6)
+  end
+
+  task.defer(Gamepad_m.start, t)
+  task.defer(Overflow_m.start, t)
+  task.defer(function()
+    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+    for _, val_5 in pairs(t.container) do
+      val_5.Parent = PlayerGui
+    end
+    require(v1.Attribute)
+  end)
+
+  function t.new()
+    local t_3 = {}
+    setmetatable(t_3, t)
+    local v8 = Janitor_m.new()
+    t_3.janitor = v8
+    t_3.themesJanitor = v8:add(Janitor_m.new())
+    t_3.singleClickJanitor = v8:add(Janitor_m.new())
+    t_3.captionJanitor = v8:add(Janitor_m.new())
+    t_3.joinJanitor = v8:add(Janitor_m.new())
+    t_3.menuJanitor = v8:add(Janitor_m.new())
+    t_3.dropdownJanitor = v8:add(Janitor_m.new())
+    local v9 = Utility_m.generateUID()
+    t_1[v9] = t_3
+    v8:add(function()
+      t_1[v9] = nil
+    end)
+    t_3.selected = v8:add(v3.new())
+    t_3.deselected = v8:add(v3.new())
+    t_3.toggled = v8:add(v3.new())
+    t_3.viewingStarted = v8:add(v3.new())
+    t_3.viewingEnded = v8:add(v3.new())
+    t_3.stateChanged = v8:add(v3.new())
+    t_3.notified = v8:add(v3.new())
+    t_3.noticeStarted = v8:add(v3.new())
+    t_3.noticeChanged = v8:add(v3.new())
+    t_3.endNotices = v8:add(v3.new())
+    t_3.toggleKeyAdded = v8:add(v3.new())
+    t_3.fakeToggleKeyChanged = v8:add(v3.new())
+    t_3.alignmentChanged = v8:add(v3.new())
+    t_3.updateSize = v8:add(v3.new())
+    t_3.resizingComplete = v8:add(v3.new())
+    t_3.joinedParent = v8:add(v3.new())
+    t_3.menuSet = v8:add(v3.new())
+    t_3.dropdownSet = v8:add(v3.new())
+    t_3.updateMenu = v8:add(v3.new())
+    t_3.startMenuUpdate = v8:add(v3.new())
+    t_3.childThemeModified = v8:add(v3.new())
+    t_3.indicatorSet = v8:add(v3.new())
+    t_3.dropdownChildAdded = v8:add(v3.new())
+    t_3.menuChildAdded = v8:add(v3.new())
+    t_3.iconModule = v1
+    t_3.UID = v9
+    t_3.isEnabled = true
+    t_3.enabled = t_3.isEnabled
+    t_3.isSelected = false
+    t_3.isViewing = false
+    t_3.joinedFrame = false
+    t_3.parentIconUID = false
+    t_3.deselectWhenOtherIconSelected = true
+    t_3.totalNotices = 0
+    t_3.activeState = "Deselected"
+    t_3.alignment = ""
+    t_3.originalAlignment = ""
+    t_3.appliedTheme = {}
+    t_3.appearance = {}
+    t_3.cachedInstances = {}
+    t_3.cachedNamesToInstances = {}
+    t_3.cachedCollectives = {}
+    t_3.bindedToggleKeys = {}
+    t_3.customBehaviours = {}
+    t_3.toggleItems = {}
+    t_3.bindedEvents = {}
+    t_3.notices = {}
+    t_3.menuIcons = {}
+    t_3.dropdownIcons = {}
+    t_3.childIconsDict = {}
+    t_3.creationTime = os.clock()
+    t_3.widget = v8:add(require(Elements.Widget)(t_3, t))
+    t_3:setAlignment()
+    v5 += 1
+    local v10 = v5 * 0.01 + 1
+    t_3:setOrder(v10, "deselected")
+    t_3:setOrder(v10, "selected")
+    t_3:setTheme(t.baseTheme)
+    local ClickRegion = t_3:getInstance("ClickRegion")
+    local v11 = false
+    local v12 = 0
+
+    ClickRegion.MouseButton1Click:Connect(function()
+      v11 = true
+
+      if t_3.locked then
+        return
+      end
+
+      local now_1 = tick()
+
+      if now_1 - v12 < 0.1 then
+        return
+      end
+
+      v12 = now_1
+
+      if t_3.isSelected then
+        t_3:deselect("User", t_3)
+        return
+      end
+
+      t_3:select("User", t_3)
+    end)
+    ClickRegion.TouchTap:Connect(function()
+      if not v11 then
+        if t_3.locked then
+          return
+        end
+
+        local now_2 = tick()
+
+        if now_2 - v12 < 0.1 then
+          return
+        end
+
+        v12 = now_2
+
+        if t_3.isSelected then
+          t_3:deselect("User", t_3)
+          return
+        end
+
+        t_3:select("User", t_3)
+      end
+    end)
+    v8:add(UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
+      if t_3.locked then
+        return
+      end
+
+      if t_3.bindedToggleKeys[input.KeyCode] and not gameProcessedEvent then
+        if t_3.locked then
+          return
+        end
+
+        local now_3 = tick()
+
+        if now_3 - v12 < 0.1 then
+          return
+        end
+
+        v12 = now_3
+
+        if t_3.isSelected then
+          t_3:deselect("User", t_3)
+          return
+        end
+
+        t_3:select("User", t_3)
+      end
+    end))
+
+    local function viewingStarted(arg9)
+      if t_3.locked then
+        return
+      end
+
+      t_3.isViewing = true
+      t_3.viewingStarted:Fire(true)
+
+      if not arg9 then
+        t_3:setState("Viewing", "User", t_3)
+      end
+    end
+
+    local function viewingEnded()
+      if t_3.locked then
+        return
+      end
+
+      t_3.isViewing = false
+      t_3.viewingEnded:Fire(true)
+      t_3:setState(nil, "User", t_3)
+    end
+
+    t_3.joinedParent:Connect(function()
+      if t_3.isViewing then
+        if t_3.locked then
+          return
+        end
+
+        t_3.isViewing = false
+        t_3.viewingEnded:Fire(true)
+        t_3:setState(nil, "User", t_3)
+      end
+    end)
+    ClickRegion.MouseEnter:Connect(function()
+      local v13 = UserInputService.PreferredInput ~= t_2.desktop
+
+      if t_3.locked then
+        return
+      end
+
+      t_3.isViewing = true
+      t_3.viewingStarted:Fire(true)
+
+      if not v13 then
+        t_3:setState("Viewing", "User", t_3)
+      end
+    end)
+    local v14 = 0
+    v8:add(UserInputService.TouchEnded:Connect(viewingEnded))
+    ClickRegion.MouseLeave:Connect(viewingEnded)
+    ClickRegion.SelectionGained:Connect(viewingStarted)
+    ClickRegion.SelectionLost:Connect(viewingEnded)
+    ClickRegion.MouseButton1Down:Connect(function()
+      if not t_3.locked and UserInputService.PreferredInput == t_2.mobile then
+        v14 += 1
+        local v15 = v14
+        task.delay(0.2, function()
+          if v15 == v14 then
+            if t_3.locked then
+              return
+            end
+
+            t_3.isViewing = true
+            t_3.viewingStarted:Fire(true)
+            t_3:setState("Viewing", "User", t_3)
+          end
+        end)
+      end
+    end)
+    ClickRegion.MouseButton1Up:Connect(function()
+      v14 += 1
+    end)
+    local IconOverlay = t_3:getInstance("IconOverlay")
+    t_3.viewingStarted:Connect(function()
+      IconOverlay.Visible = not t_3.overlayDisabled
+    end)
+    t_3.viewingEnded:Connect(function()
+      IconOverlay.Visible = false
+    end)
+    v8:add(v4:Connect(function(arg10)
+      if arg10 ~= t_3 and t_3.deselectWhenOtherIconSelected and arg10.deselectWhenOtherIconSelected then
+        t_3:deselect("AutoDeselect", arg10)
+      end
+    end))
+    local v16 = string.split(tostring(debug.info(2, "s")), ".")
+    local v17 = game
+    local v18 = nil
+
+    for _, val_6 in pairs(v16) do
+      v17 = v17:FindFirstChild(val_6)
+
+      if not v17 then
+        break
+      end
+
+      if v17:IsA("ScreenGui") then
+        v18 = v17
+      end
+    end
+
+    if v17 and v18 and v18.ResetOnSpawn == true then
+      t_3.originsScreenGui = v18
+      Utility_m.localPlayerRespawned(function()
+        t_3:destroy()
+      end)
+    end
+
+    t_3.toggled:Connect(function(arg11)
+      t_3.noticeChanged:Fire(t_3.totalNotices)
+
+      for key_7, _ in pairs(t_3.childIconsDict) do
+        local v20 = t.getIconByUID(key_7)
+        v20.noticeChanged:Fire(v20.totalNotices)
+
+        if not arg11 and v20.isSelected then
+          for _, _ in pairs(v20.childIconsDict) do
+            v20:deselect("HideParentFeature", t_3)
+          end
+        end
+      end
+    end)
+    t_3.selected:Connect(function()
+      if if not (#t_3.dropdownIcons > 0) then false else true then
+        if StarterGui:GetCore("ChatActive") and t_3.alignment ~= "Right" then
+          t_3.chatWasPreviouslyActive = true
+          StarterGui:SetCore("ChatActive", false)
+        end
+
+        if StarterGui:GetCoreGuiEnabled("PlayerList") and t_3.alignment ~= "Left" then
+          t_3.playerlistWasPreviouslyActive = true
+          StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+        end
+      end
+    end)
+    t_3.deselected:Connect(function()
+      if t_3.chatWasPreviouslyActive then
+        t_3.chatWasPreviouslyActive = nil
+        StarterGui:SetCore("ChatActive", true)
+      end
+
+      if t_3.playerlistWasPreviouslyActive then
+        t_3.playerlistWasPreviouslyActive = nil
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, true)
+      end
+    end)
+    task.delay(0.1, function()
+      if t_3.activeState == "Deselected" then
+        t_3.stateChanged:Fire("Deselected")
+        t_3:refresh()
+      end
+    end)
+    t.iconAdded:Fire(t_3)
+
+    return t_3
+  end
+
+  function t.setName(arg12, arg13)
+    arg12.widget.Name = arg13
+    arg12.name = arg13
+    return arg12
+  end
+
+  function t.setState(arg14, arg15, arg16, arg17)
+    local v22
+
+    if not arg15 then
+      v22 = if not arg14.isSelected then "Deselected" else "Selected"
+      arg15 = v22
+    end
+
+    v22 = Utility_m.formatStateName(arg15)
+
+    if arg14.activeState == v22 then
+      return
+    end
+
+    local IsSelected = arg14.isSelected
+    arg14.activeState = v22
+
+    if v22 == "Deselected" then
+      arg14.isSelected = false
+
+      if IsSelected then
+        arg14.toggled:Fire(false, arg16, arg17)
+        arg14.deselected:Fire(arg16, arg17)
+      end
+
+      arg14:_setToggleItemsVisible(false, arg16, arg17)
+    elseif v22 == "Selected" then
+      arg14.isSelected = true
+
+      if not IsSelected then
+        arg14.toggled:Fire(true, arg16, arg17)
+        arg14.selected:Fire(arg16, arg17)
+        v4:Fire(arg14, arg16, arg17)
+      end
+
+      arg14:_setToggleItemsVisible(true, arg16, arg17)
+    end
+
+    arg14.stateChanged:Fire(v22, arg16, arg17)
+  end
+
+  function t.getInstance(arg18, arg19)
+    local v23 = arg18.cachedNamesToInstances[arg19]
+
+    if v23 then
+      return v23
+    end
+
+    local function cacheInstance(arg20, arg21)
+      if not arg18.cachedInstances[arg21] then
+        local Collective = arg21:GetAttribute("Collective")
+        local v24 = Collective
+
+        if v24 then
+          v24 = arg18.cachedCollectives[Collective]
+        end
+
+        if v24 then
+          table.insert(v24, arg21)
+        end
+
+        arg18.cachedNamesToInstances[arg20] = arg21
+        arg18.cachedInstances[arg21] = true
+        arg21.Destroying:Once(function()
+          arg18.cachedNamesToInstances[arg20] = nil
+          arg18.cachedInstances[arg21] = nil
+        end)
+      end
+    end
+
+    local Widget = arg18.widget
+    cacheInstance("Widget", Widget)
+
+    if arg19 == "Widget" then
+      return Widget
+    end
+
+    local v26 = nil
+
+    local function scanChildren(arg22)
+      local Name
+
+      for _, child in pairs(arg22:GetChildren()) do
+        local WidgetUID = child:GetAttribute("WidgetUID")
+
+        if not WidgetUID or WidgetUID == arg18.UID then
+          local v28 = Themes_m.getRealInstance(child)
+
+          if v28 then
+            child = v28
+          end
+
+          scanChildren(child)
+
+          if not child:IsA("GuiBase") then
+            if not child:IsA("UIBase") then
+              if child:IsA("ValueBase") then
+                Name = child.Name
+                cacheInstance(Name, child)
+
+                if Name == arg19 then
+                  v26 = child
+                end
+              end
+            else
+              Name = child.Name
+              cacheInstance(Name, child)
+
+              if Name == arg19 then
+                v26 = child
+              end
+            end
+          else
+            Name = child.Name
+            cacheInstance(Name, child)
+
+            if Name == arg19 then
+              v26 = child
+            end
+          end
+        end
+      end
+    end
+
+    scanChildren(Widget)
+
+    return v26
+  end
+
+  function t.getCollective(arg23, arg24)
+    local v29 = arg23.cachedCollectives[arg24]
+
+    if v29 then
+      return v29
+    end
+
+    local t_4 = {}
+
+    for key_10, _ in pairs(arg23.cachedInstances) do
+      if key_10:GetAttribute("Collective") == arg24 then
+        table.insert(t_4, key_10)
+      end
+    end
+
+    arg23.cachedCollectives[arg24] = t_4
+
+    return t_4
+  end
+
+  function t.getInstanceOrCollective(arg25, arg26)
+    local v30 = {}
+    local v31 = arg25:getInstance(arg26)
+
+    if v31 then
+      table.insert(v30, v31)
+    end
+
+    if #v30 == 0 then
+      v30 = arg25:getCollective(arg26)
+    end
+
+    return v30
+  end
+
+  function t.getStateGroup(arg27, arg28)
+    local v32 = arg28 or arg27.activeState
+    local v33 = arg27.appearance[v32]
+
+    if not v33 then
+      v33 = {}
+      arg27.appearance[v32] = v33
+    end
+
+    return v33
+  end
+
+  function t.refreshAppearance(arg29, arg30, arg31)
+    Themes_m.refresh(arg29, arg30, arg31)
+    return arg29
+  end
+
+  function t.refresh(arg32)
+    arg32:refreshAppearance(arg32.widget)
+    arg32.updateSize:Fire()
+    return arg32
+  end
+
+  function t.updateParent(arg33)
+    local v34 = t.getIconByUID(arg33.parentIconUID)
+    if v34 then
+      v34.updateSize:Fire()
+    end
+  end
+
+  function t.setBehaviour(arg34, arg35, arg36, arg37, arg38)
+    arg34.customBehaviours[arg35 .. "-" .. arg36] = arg37
+
+    if arg38 then
+      for _, val_10 in pairs((arg34:getInstanceOrCollective(arg35))) do
+        arg34:refreshAppearance(val_10, arg36)
+      end
+    end
+  end
+
+  function t.modifyTheme(arg39, arg40, arg41)
+    return arg39, (Themes_m.modify(arg39, arg40, arg41))
+  end
+
+  function t.modifyChildTheme(arg42, arg43, arg44)
+    arg42.childModifications = arg43
+    arg42.childModificationsUID = arg44
+
+    for key_12, _ in pairs(arg42.childIconsDict) do
+      t.getIconByUID(key_12):modifyTheme(arg43, arg44)
+    end
+
+    arg42.childThemeModified:Fire()
+
+    return arg42
+  end
+
+  function t.removeModification(arg45, arg46)
+    Themes_m.remove(arg45, arg46)
+    return arg45
+  end
+
+  function t.removeModificationWith(arg47, arg48, arg49, arg50)
+    Themes_m.removeWith(arg47, arg48, arg49, arg50)
+    return arg47
+  end
+
+  function t.setTheme(arg51, arg52)
+    Themes_m.set(arg51, arg52)
+    return arg51
+  end
+
+  function t.setEnabled(arg53, arg54)
+    arg53.isEnabled = arg54
+    arg53.enabled = arg53.isEnabled
+    arg53.widget.Visible = arg54
+    arg53:updateParent()
+    return arg53
+  end
+
+  function t.select(arg55, arg56, arg57)
+    arg55:setState("Selected", arg56, arg57)
+    return arg55
+  end
+
+  function t.deselect(arg58, arg59, arg60)
+    arg58:setState("Deselected", arg59, arg60)
+    return arg58
+  end
+
+  function t.notify(arg61, arg62, arg63)
+    if not arg61.notice then
+      arg61.notice = require(Elements.Notice)(arg61, t)
+    end
+
+    arg61.noticeStarted:Fire(arg62, arg63)
+
+    return arg61
+  end
+
+  function t.clearNotices(arg64)
+    arg64.endNotices:Fire()
+    return arg64
+  end
+
+  function t.disableOverlay(arg65, arg66)
+    arg65.overlayDisabled = arg66
+    return arg65
+  end
+
+  t.disableStateOverlay = t.disableOverlay
+
+  function t.setImage(arg67, arg68, arg69)
+    arg67:modifyTheme({ "IconImage", "Image", arg68, arg69 })
+    task.spawn(function()
+      local v36 = if tonumber(arg68) then `rbxassetid://{arg68}` else arg68
+
+      if ContentProvider:GetAssetFetchStatus(v36) ~= Enum.AssetFetchStatus.Success then
+        pcall(ContentProvider.PreloadAsync, ContentProvider, { v36 })
+      end
+    end)
+
+    return arg67
+  end
+
+  function t.setLabel(arg70, arg71, arg72)
+    arg70:modifyTheme({ "IconLabel", "Text", arg71, arg72 })
+    return arg70
+  end
+
+  function t.setOrder(arg73, arg74, arg75)
+    local v38 = arg74 * 100
+    arg73:modifyTheme({ "IconSpot", "LayoutOrder", v38, arg75 })
+    arg73:modifyTheme({ "Widget", "LayoutOrder", v38, arg75 })
+    return arg73
+  end
+
+  function t.setCornerRadius(arg76, arg77, arg78)
+    arg76:modifyTheme({ "IconCorners", "CornerRadius", arg77, arg78 })
+    return arg76
+  end
+
+  function t.align(arg79, arg80, arg81)
+    local v39 = tostring(arg80):lower()
+
+    if v39 == "mid" or v39 == "centre" then
+      v39 = "center"
+    end
+
+    v39 = if v39 == "left" then v39 else if v39 == "center" then v39 else if v39 == "right" then v39 else "left"
+    local v40 = if v39 ~= "center" then t.container.TopbarStandard else t.container.TopbarCentered or t.container.TopbarStandard
+    local Holders = v40.Holders
+    local v42 = string.upper((string.sub(v39, 1, 1))) .. string.sub(v39, 2)
+
+    if not arg81 then
+      arg79.originalAlignment = v42
+    end
+
+    local v43 = Holders[v42]
+    local JoinedFrame = arg79.joinedFrame
+    arg79.screenGui = v40
+    arg79.alignmentHolder = v43
+
+    if not arg79.isDestroyed then
+      arg79.widget.Parent = JoinedFrame or v43
+    end
+
+    arg79.alignment = v42
+    arg79.alignmentChanged:Fire(v42)
+    t.iconChanged:Fire(arg79)
+
+    return arg79
+  end
+
+  t.setAlignment = t.align
+
+  function t.setLeft(arg82)
+    arg82:setAlignment("Left")
+    return arg82
+  end
+
+  function t.setMid(arg83)
+    arg83:setAlignment("Center")
+    return arg83
+  end
+
+  function t.setRight(arg84)
+    arg84:setAlignment("Right")
+    return arg84
+  end
+
+  function t.setWidth(arg85, arg86, arg87)
+    arg85:modifyTheme({ "Widget", "DesiredWidth", arg86, arg87 })
+    return arg85
+  end
+
+  function t.setImageScale(arg88, arg89, arg90)
+    arg88:modifyTheme({ "IconImageScale", "Value", arg89, arg90 })
+    return arg88
+  end
+
+  function t.setImageRatio(arg91, arg92, arg93)
+    arg91:modifyTheme({ "IconImageRatio", "AspectRatio", arg92, arg93 })
+    return arg91
+  end
+
+  function t.setTextSize(arg94, arg95, arg96)
+    arg94:modifyTheme({ "IconLabel", "TextSize", arg95, arg96 })
+    return arg94
+  end
+
+  function t.setTextFont(arg97, arg98, arg99, arg100, arg101)
+    local v44 = arg99 or Enum.FontWeight.Regular
+    arg99 = v44
+    v44 = arg100 or Enum.FontStyle.Normal
+    arg100 = v44
+    v44 = nil
+    local v45 = typeof(arg98)
+
+    if v45 == "number" then
+      v44 = Font.fromId(arg98, arg99, arg100)
+    elseif v45 == "EnumItem" then
+      v44 = Font.fromEnum(arg98)
+    elseif v45 == "string" and not arg98:match("rbxasset") then
+      v44 = Font.fromName(arg98, arg99, arg100)
+    end
+
+    if not v44 then
+      v44 = Font.new(arg98, arg99, arg100)
+    end
+
+    arg97:modifyTheme({ "IconLabel", "FontFace", v44, arg101 })
+
+    return arg97
+  end
+
+  function t.setTextColor(arg102, arg103, arg104)
+    if typeof(arg103) ~= "Color3" then
+      if arg103 ~= nil and arg103 ~= "" then
+        warn("setTextColor item must be a Color3 value! Changed the color to white.")
+      end
+      arg103 = Color3.fromRGB(255, 255, 255)
+    end
+
+    arg102:modifyTheme({ "IconLabel", "TextColor3", arg103, arg104 })
+
+    return arg102
+  end
+
+  function t.bindToggleItem(arg105, arg106)
+    if not arg106:IsA("GuiObject") and not arg106:IsA("LayerCollector") then
+      error("Toggle item must be a GuiObject or LayerCollector!")
+    end
+
+    arg105.toggleItems[arg106] = true
+    arg105:_updateSelectionInstances()
+
+    return arg105
+  end
+
+  function t.unbindToggleItem(arg107, arg108)
+    arg107.toggleItems[arg108] = nil
+    arg107:_updateSelectionInstances()
+    return arg107
+  end
+
+  function t._updateSelectionInstances(arg109)
+    for key_13, _ in pairs(arg109.toggleItems) do
+      local t_5 = {}
+
+      for _, val_13 in pairs(key_13:GetDescendants()) do
+        if not val_13:IsA("TextButton") then
+          if val_13:IsA("ImageButton") and val_13.Active then
+            table.insert(t_5, val_13)
+          end
+        elseif val_13.Active then
+          table.insert(t_5, val_13)
+        end
+      end
+
+      arg109.toggleItems[key_13] = t_5
+    end
+  end
+
+  function t._setToggleItemsVisible(arg110, arg111, _, arg113)
+    for key_15, _ in pairs(arg110.toggleItems) do
+      if not arg113 or arg113 == arg110 or arg113.toggleItems[key_15] == nil then
+        key_15[if key_15:IsA("LayerCollector") then "Enabled" else "Visible"] = arg111
+      end
+    end
+  end
+
+  function t.bindEvent(arg114, arg115, arg116)
+    local v48 = arg114[arg115]
+    local v49 = v48
+
+    if v49 then
+      v49 = if typeof(v48) == "table" then v48.Connect else false
+    end
+
+    assert(v49, "argument[1] must be a valid topbarplus icon event name!")
+    assert(if typeof(arg116) ~= "function" then false else true, "argument[2] must be a function!")
+    arg114.bindedEvents[arg115] = v48:Connect(function(...)
+      arg116(arg114, ...)
+    end)
+
+    return arg114
+  end
+
+  function t.unbindEvent(arg117, arg118)
+    local v50 = arg117.bindedEvents[arg118]
+
+    if v50 then
+      v50:Disconnect()
+      arg117.bindedEvents[arg118] = nil
+    end
+
+    return arg117
+  end
+
+  function t.bindToggleKey(arg119, arg120)
+    assert(
+      if typeof(arg120) ~= "EnumItem" then false else true,
+      "argument[1] must be a KeyCode EnumItem!"
+    )
+    arg119.bindedToggleKeys[arg120] = true
+    arg119.toggleKeyAdded:Fire(arg120)
+    arg119:setCaption("_hotkey_")
+
+    return arg119
+  end
+
+  function t.unbindToggleKey(arg121, arg122)
+    assert(
+      if typeof(arg122) ~= "EnumItem" then false else true,
+      "argument[1] must be a KeyCode EnumItem!"
+    )
+    arg121.bindedToggleKeys[arg122] = nil
+
+    return arg121
+  end
+
+  function t.call(arg123, arg124, ...)
+    local t_6 = table.pack(...)
+    task.spawn(function()
+      arg124(arg123, table.unpack(t_6))
+    end)
+
+    return arg123
+  end
+
+  function t.addToJanitor(arg125, arg126, arg127, arg128)
+    arg125.janitor:add(arg126, arg127, arg128)
+    return arg125
+  end
+
+  function t.lock(arg129)
+    arg129:getInstance("ClickRegion").Visible = false
+    arg129.locked = true
+    return arg129
+  end
+
+  function t.unlock(arg130)
+    arg130:getInstance("ClickRegion").Visible = true
+    arg130.locked = false
+    return arg130
+  end
+
+  function t.debounce(arg131, arg132)
+    arg131:lock()
+    task.wait(arg132)
+    arg131:unlock()
+    return arg131
+  end
+
+  function t.autoDeselect(arg133, arg134)
+    if arg134 == nil then
+      arg134 = true
+    end
+
+    arg133.deselectWhenOtherIconSelected = arg134
+
+    return arg133
+  end
+
+  function t.oneClick(arg135, arg136)
+    local SingleClickJanitor = arg135.singleClickJanitor
+    SingleClickJanitor:clean()
+
+    if arg136 or arg136 == nil then
+      SingleClickJanitor:add(arg135.selected:Connect(function()
+        arg135:deselect("OneClick", arg135)
+      end))
+    end
+
+    arg135.oneClickEnabled = true
+
+    return arg135
+  end
+
+  function t.setCaption(arg137, arg138)
+    if arg138 == "_hotkey_" and arg137.captionText then
+      return arg137
+    end
+
+    local CaptionJanitor = arg137.captionJanitor
+    arg137.captionJanitor:clean()
+
+    if not arg138 or arg138 == "" then
+      arg137.caption = nil
+      arg137.captionText = nil
+
+      return arg137
+    end
+
+    local v55 = CaptionJanitor:add(require(Elements.Caption)(arg137))
+    v55:SetAttribute("CaptionText", arg138)
+    arg137.caption = v55
+    arg137.captionText = arg138
+
+    return arg137
+  end
+
+  function t.setCaptionHint(arg139, arg140)
+    assert(
+      if typeof(arg140) ~= "EnumItem" then false else true,
+      "argument[1] must be a KeyCode EnumItem!"
+    )
+    arg139.fakeToggleKey = arg140
+    arg139.fakeToggleKeyChanged:Fire(arg140)
+    arg139:setCaption("_hotkey_")
+
+    return arg139
+  end
+
+  function t.leave(arg141)
+    arg141.joinJanitor:clean()
+    return arg141
+  end
+
+  function t.joinMenu(arg142, arg143)
+    Utility_m.joinFeature(arg142, arg143, arg143.menuIcons, arg143:getInstance("Menu"))
+    arg143.menuChildAdded:Fire(arg142)
+    return arg142
+  end
+
+  function t.setMenu(arg144, arg145)
+    arg144.menuSet:Fire(arg145)
+    return arg144
+  end
+
+  function t.setFixedMenu(arg146, arg147)
+    arg146:freezeMenu(arg147)
+    arg146:setMenu(arg147)
+  end
+
+  t.setFrozenMenu = t.setFixedMenu
+
+  function t.freezeMenu(arg148)
+    arg148:select("FrozenMenu", arg148)
+    arg148:bindEvent("deselected", function(arg149)
+      arg149:select("FrozenMenu", arg148)
+    end)
+    arg148:modifyTheme({ "IconSpot", "Visible", false })
+  end
+
+  function t.joinDropdown(arg150, arg151)
+    arg151:getDropdown()
+    Utility_m.joinFeature(
+      arg150,
+      arg151,
+      arg151.dropdownIcons,
+      arg151:getInstance("DropdownScroller")
+    )
+    arg151.dropdownChildAdded:Fire(arg150)
+
+    return arg150
+  end
+
+  function t.getDropdown(arg152)
+    local v57 = arg152.dropdown
+
+    if not v57 then
+      v57 = require(Elements.Dropdown)(arg152)
+      arg152.dropdown = v57
+      arg152:clipOutside(v57)
+    end
+
+    return v57
+  end
+
+  function t.setDropdown(arg153, arg154)
+    arg153:getDropdown()
+    arg153.dropdownSet:Fire(arg154)
+    return arg153
+  end
+
+  function t.clipOutside(arg155, arg156)
+    local v58 = Utility_m.clipOutside(arg155, arg156)
+    arg155:refreshAppearance(arg156)
+    return arg155, v58
+  end
+
+  function t.setIndicator(arg157, arg158)
+    if not arg157.indicator then
+      arg157.indicator = arg157.janitor:add(require(Elements.Indicator)(arg157, t))
+    end
+
+    arg157.indicatorSet:Fire(arg158)
+  end
+
+  function t.convertLabelToNumberSpinner(arg159, arg160, arg161)
+    task.defer(function()
+      local IconLabel = arg159:getInstance("IconLabel")
+      IconLabel.Transparency = 1
+      arg160.Parent = IconLabel.Parent
+      arg160.Size = UDim2.fromScale(1, 1)
+      arg160.AnchorPoint = Vector2.new(0.5, 0.5)
+      arg160.Position = UDim2.new(0.5, 0, 0.5, 0)
+      arg160.TextXAlignment = Enum.TextXAlignment.Center
+      arg160.ClipsDescendants = false
+
+      for _, val_15 in ipairs({
+        "FontFace",
+        "BorderSizePixel",
+        "BorderColor3",
+        "Rotation",
+        "TextStrokeTransparency",
+        "TextStrokeColor3",
+        "TextStrokeTransparency",
+        "TextColor3"
+      }) do
+        arg160[val_15] = IconLabel[val_15]
+        arg159:addToJanitor(IconLabel:GetPropertyChangedSignal(val_15):Connect(function()
+          arg160[val_15] = IconLabel[val_15]
+        end))
+      end
+
+      local function getSpinnerSizeAndDigitCount()
+        local v63 = 0
+        local v64 = 0
+
+        for _, child_1 in arg160.Frame:GetChildren() do
+          local v65 = string.lower(child_1.Name)
+
+          if v65 == "digit" then
+            v63 += child_1.AbsoluteSize.X
+            v64 += 1
+          elseif (v65 == "prefix" or v65 == "suffix" or v65 == "comma") and child_1.Text ~= "" then
+            v63 += child_1.AbsoluteSize.X
+            v64 += 1
+          end
+        end
+
+        return v63, v64
+      end
+
+      local function adjustSize()
+        local v67, v68 = getSpinnerSizeAndDigitCount()
+
+        if v68 < 18 then
+          arg159:setLabel(arg160.Value)
+        end
+
+        local v69 = arg160.Frame.AbsoluteSize.X
+
+        while v67 < v69 do
+          if arg159.isDestroyed == true then
+            break
+          end
+
+          task.wait(0.05)
+
+          if v68 > 0 and v68 < 8 then
+            arg160.TextSize = IconLabel.TextSize
+            break
+          end
+
+          local v70 = arg160
+          v70.TextSize += 1
+          v69 = arg160.Frame.AbsoluteSize.X
+          v67, v68 = getSpinnerSizeAndDigitCount()
+        end
+
+        local Parent_1 = IconLabel.Parent
+        local v71 = Parent_1
+
+        if v71 then
+          v71 = Parent_1.Parent
+        end
+
+        v69 = if v71 ~= nil then if v71.IconImage.Visible ~= true then v71.AbsoluteSize.X else arg160.Frame.AbsoluteSize.X + IconLabel.Parent.Parent.IconImage.AbsoluteSize.X else 0
+
+        while v67 > v69 do
+          if arg159.isDestroyed == true then
+            break
+          end
+
+          task.wait(0.05)
+
+          if v68 < 8 and v68 > 0 then
+            arg160.TextSize = IconLabel.TextSize
+            return
+          end
+
+          local v72 = arg160
+          v72.TextSize -= 1
+          local Parent_2 = IconLabel.Parent
+          local v73 = Parent_2
+
+          if v73 then
+            v73 = Parent_2.Parent
+          end
+
+          v69 = if v73 == nil then 0 else if v73.IconImage.Visible == true then arg160.Frame.AbsoluteSize.X + IconLabel.Parent.Parent.IconImage.AbsoluteSize.X else v73.AbsoluteSize.X
+          v67, v68 = getSpinnerSizeAndDigitCount()
+        end
+      end
+
+      arg159:addToJanitor(arg160.Frame.ChildAdded:Connect(adjustSize))
+      arg159:addToJanitor(arg160.Frame.ChildRemoved:Connect(adjustSize))
+      arg159:addToJanitor(arg159.iconAdded:Connect(function()
+        task.wait(1)
+        adjustSize()
+      end))
+      arg159:updateParent()
+      arg160.Name = "LabelSpinner"
+      arg160.Prefix = "$"
+      arg160.Commas = true
+      arg160.Decimals = 0
+      arg160.Duration = 0.25
+      arg160.Value = 10
+      task.wait(0.2)
+
+      if typeof(arg161) == "function" then
+        arg161()
+      end
+    end)
+
+    return arg159
+  end
+
+  function t.destroy(arg162)
+    if arg162.isDestroyed then
+      return
+    end
+
+    arg162:clearNotices()
+
+    if arg162.parentIconUID then
+      arg162:leave()
+    end
+
+    arg162.isDestroyed = true
+    arg162.janitor:clean()
+    t.iconRemoved:Fire(arg162)
+  end
+
+  t.Destroy = t.destroy
+
+  return t
+end)
+
+local Icon = customRequire(root)
+genv.TopbarPlusLibrary = Icon
+return Icon
